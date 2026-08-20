@@ -227,7 +227,7 @@
     BGM：POPULATION / GENERATION / MUTATION に応じて単純→複雑へ生成<br>
     生命をクリック／タップ：捕獲して図鑑へ<br>LASSO CAPTURE：自由線で囲んだ生命群を「ひとつのコロニー標本」として捕獲<br>空いている場所をクリック／タップ：餌を投入<br>
     ドラッグ：水流を発生<br>
-    生物は餌を獲得し、形・色・接続を変異させ、分裂または交配します。高世代ほど動き・伸縮・色彩が複雑化します。
+    生物は餌を獲得し、形・色・接続を変異させ、分裂または交配します。SPEED / CURIOSITY / SOCIABILITY は図形・色・配置から自動算出されます。
   </div>
 </div>
 
@@ -242,7 +242,13 @@
     <button id="closeCollection">CLOSE</button>
   </div>
   <div id="collectionGrid"></div>
-  <div id="specimenDetail">サムネールをクリックすると拡大表示します。</div>
+  <div id="specimenDetail">
+      サムネールをクリックすると拡大表示します。<br><br>
+      <b>形態ルール</b><br>
+      ▲ 推進 / ━ 探索 / ● 感覚 / ■ 安定 / ◇ 接続<br>
+      赤・橙 = SPEED / 黄 = CURIOSITY / 緑 = SOCIABILITY<br>
+      外側へ広がる配置 = CURIOSITY / 非対称 = SPEED / 放射状・均衡 = SOCIABILITY
+    </div>
 </div>
 <div id="captureToast">CAPTURED</div>
 
@@ -298,15 +304,15 @@
       blocks: [],
       hueShift: rand(-18,18),
       metabolism: rand(.8,1.25),
-      curiosity: rand(.5,1.5),
-      sociability: rand(.4,1.4),
-      speed: rand(.55,1.45)
+      curiosity: 1,
+      sociability: 1,
+      speed: 1
     };
     if(!base){
       const n=3+((Math.random()*4)|0);
       for(let i=0;i<n;i++) g.blocks.push(newBlock(i));
     }
-    return g;
+    return refreshTraits(g);
   }
 
   function newBlock(i=0){
@@ -319,6 +325,109 @@
       color: choice(palette).slice(),
       alpha: rand(.45,1)
     };
+  }
+
+
+  function colorAffinity(rgb){
+    // Palette semantics:
+    // red/orange -> SPEED, yellow -> CURIOSITY, green -> SOCIABILITY
+    // cyan/blue -> stability, purple -> mutation/complexity, white -> neutral
+    const [r,g,b]=rgb||[255,255,255];
+    const refs={
+      speed:[[255,92,120],[255,142,77]],
+      curiosity:[[255,219,88]],
+      sociability:[[88,244,171]],
+      stable:[[70,211,255]],
+      mutation:[[155,111,255]],
+      neutral:[[240,240,246]]
+    };
+    const sim=(c,t)=>{
+      const d=Math.hypot(c[0]-t[0],c[1]-t[1],c[2]-t[2]);
+      return clamp(1-d/441.7,0,1);
+    };
+    const best=(arr)=>Math.max(...arr.map(t=>sim([r,g,b],t)));
+    return {
+      speed:best(refs.speed),
+      curiosity:best(refs.curiosity),
+      sociability:best(refs.sociability),
+      stable:best(refs.stable),
+      mutation:best(refs.mutation),
+      neutral:best(refs.neutral)
+    };
+  }
+
+  function calculateTraits(gene){
+    const blocks=gene?.blocks||[];
+    if(!blocks.length) return {speed:1,curiosity:1,sociability:1};
+
+    let speed=0.35, curiosity=0.35, sociability=0.35;
+    let radial=0, asymX=0, asymY=0, maxR=1;
+
+    for(const b of blocks){
+      const rr=Math.hypot(b.x||0,b.y||0);
+      radial+=rr;
+      asymX+=(b.x||0)*(b.s||1);
+      asymY+=(b.y||0)*(b.s||1);
+      maxR=Math.max(maxR,rr+(b.s||0));
+
+      // Shape semantics
+      if(b.type==='triangle'){ speed+=0.26; curiosity+=0.05; }
+      else if(b.type==='line'){ speed+=0.08; curiosity+=0.24; sociability+=0.08; }
+      else if(b.type==='circle'){ speed+=0.04; curiosity+=0.14; sociability+=0.14; }
+      else if(b.type==='square'){ speed-=0.035; sociability+=0.07; }
+      else if(b.type==='membrane'){ curiosity+=0.08; sociability+=0.25; }
+
+      // Color semantics
+      const ca=colorAffinity(b.color);
+      speed += ca.speed*0.17;
+      curiosity += ca.curiosity*0.19;
+      sociability += ca.sociability*0.19;
+
+      // Blue/cyan dampens speed slightly and favors stability/social persistence
+      speed -= ca.stable*0.035;
+      sociability += ca.stable*0.045;
+
+      // Purple increases exploratory unpredictability
+      curiosity += ca.mutation*0.075;
+    }
+
+    const n=blocks.length;
+    radial/=n;
+
+    // Placement semantics:
+    // outward-spreading structures explore more
+    const spread=clamp(radial/28,0,1.5);
+    curiosity += spread*0.22;
+
+    // asymmetry contributes to dynamic / fast movement
+    const mass=blocks.reduce((s,b)=>s+(b.s||1),0)||1;
+    const asym=clamp(Math.hypot(asymX,asymY)/(mass*maxR),0,1);
+    speed += asym*0.22;
+
+    // radial / balanced arrangements support sociability
+    const balance=1-asym;
+    sociability += balance*0.15;
+
+    // Many connectors / elements increase social complexity but excessive mass reduces speed.
+    sociability += clamp((n-3)/9,0,1)*0.17;
+    speed -= clamp((n-7)/10,0,1)*0.10;
+
+    // normalize to the same conceptual range used by radar chart: roughly 0.2–2.0
+    const normalize=v=>clamp(v,0.2,2.0);
+
+    return {
+      speed:normalize(speed),
+      curiosity:normalize(curiosity),
+      sociability:normalize(sociability)
+    };
+  }
+
+  function refreshTraits(gene){
+    const t=calculateTraits(gene);
+    gene.speed=t.speed;
+    gene.curiosity=t.curiosity;
+    gene.sociability=t.sociability;
+    return gene;
   }
 
   function mutateGene(g, strength=1){
@@ -345,9 +454,7 @@
     }
     n.hueShift += rand(-8,8);
     n.metabolism=clamp(n.metabolism+rand(-.08,.08),.55,1.6);
-    n.curiosity=clamp(n.curiosity+rand(-.12,.12),.2,2);
-    n.sociability=clamp(n.sociability+rand(-.12,.12),.1,2);
-    n.speed=clamp(n.speed+rand(-.12,.12),.35,2);
+    refreshTraits(n);
     mutationCount++;
     return n;
   }
@@ -359,9 +466,7 @@
     const target=clamp(Math.round((a.blocks.length+b.blocks.length)/2+rand(-1.5,1.5)),2,12);
     for(let i=0;i<target;i++) child.blocks.push(JSON.parse(JSON.stringify(choice(pool))));
     child.metabolism=(a.metabolism+b.metabolism)/2;
-    child.curiosity=(a.curiosity+b.curiosity)/2;
-    child.sociability=(a.sociability+b.sociability)/2;
-    child.speed=(a.speed+b.speed)/2;
+    refreshTraits(child);
     return mutateGene(child,.65);
   }
 
@@ -370,7 +475,7 @@
       x,y,vx:rand(-.7,.7),vy:rand(-.7,.7),
       angle:rand(Math.PI*2), spin:rand(-.006,.006),
       energy:rand(55,95), age:0, generation,
-      gene:gene||makeGene(),
+      gene:refreshTraits(gene||makeGene()),
       cooldown:rand(0,300), pulse:rand(Math.PI*2),
       phaseA:rand(Math.PI*2), phaseB:rand(Math.PI*2),
       turnBias:rand(-1,1), wobbleSeed:rand(1000),
@@ -422,7 +527,18 @@
   function loadCollection(){
     try{
       const saved=JSON.parse(localStorage.getItem(COLLECTION_KEY)||'[]');
-      if(Array.isArray(saved)) collection=saved;
+      if(Array.isArray(saved)){
+        collection=saved;
+        for(const s of collection){
+          if(s.type==='group' && Array.isArray(s.members)){
+            for(const m of s.members){
+              if(m.gene) refreshTraits(m.gene);
+            }
+          }else if(s.gene){
+            refreshTraits(s.gene);
+          }
+        }
+      }
     }catch(e){ collection=[]; }
     updateCollectionUI();
   }
