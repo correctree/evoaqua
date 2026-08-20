@@ -80,6 +80,12 @@
   @media (max-width:680px){
     #collectionPanel{right:10px;top:auto;bottom:10px;max-height:60vh}
   }
+
+  #lassoModeBtn.active{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.35)}
+  .deleteSpecimen{
+    margin-top:6px;width:100%;padding:6px 8px;font-size:9px;
+    border-color:rgba(255,120,120,.25);color:#ffb0b0
+  }
 </style>
 </head>
 <body>
@@ -96,11 +102,11 @@
   <div class="row">
     <button id="feedBtn">ADD FOOD</button>
     <button id="burstBtn">MUTATE</button>
-    <button id="resetBtn">RESET</button><button id="soundBtn">START BGM</button><button id="collectionBtn">COLLECTION 0</button>
+    <button id="resetBtn">RESET</button><button id="soundBtn">START BGM</button><button id="collectionBtn">COLLECTION 0</button><button id="lassoModeBtn">LASSO CAPTURE</button>
   </div>
   <div class="hint">
     BGM：POPULATION / GENERATION / MUTATION に応じて単純→複雑へ生成<br>
-    生命をクリック／タップ：捕獲して図鑑へ<br>空いている場所をクリック／タップ：餌を投入<br>
+    生命をクリック／タップ：捕獲して図鑑へ<br>LASSO CAPTURE：自由線で囲んだ生命をまとめて捕獲<br>空いている場所をクリック／タップ：餌を投入<br>
     ドラッグ：水流を発生<br>
     生物は餌を獲得し、形・色・接続を変異させ、分裂または交配します。高世代ほど動き・伸縮・色彩が複雑化します。
   </div>
@@ -131,6 +137,7 @@
   const COLLECTION_KEY='evolvingAquariumCollectionV1';
   let mutationCount=0, maxGeneration=0, time=0;
   let pointer={x:W/2,y:H/2,down:false,px:W/2,py:H/2,vx:0,vy:0};
+  let lassoMode=false, lassoActive=false, lassoPoints=[];
 
   const SHAPES=['circle','square','triangle','line','membrane'];
   const palette=[
@@ -242,6 +249,32 @@
   }
 
 
+
+  function pointInPolygon(x,y,poly){
+    let inside=false;
+    for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+      const xi=poly[i].x, yi=poly[i].y;
+      const xj=poly[j].x, yj=poly[j].y;
+      const intersect=((yi>y)!=(yj>y)) &&
+        (x < (xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi);
+      if(intersect) inside=!inside;
+    }
+    return inside;
+  }
+
+  function finishLassoCapture(){
+    if(lassoPoints.length<3){ lassoPoints=[]; lassoActive=false; return; }
+    const captured=creatures.filter(c=>pointInPolygon(c.x,c.y,lassoPoints));
+    for(const c of captured) captureCreature(c,false);
+    if(captured.length){
+      const toast=document.getElementById('captureToast');
+      toast.textContent=captured.length+' SPECIMENS CAPTURED';
+      toast.classList.add('show');
+      setTimeout(()=>toast.classList.remove('show'),1100);
+    }
+    lassoPoints=[]; lassoActive=false;
+  }
+
   function saveCollection(){
     try{ localStorage.setItem(COLLECTION_KEY,JSON.stringify(collection)); }catch(e){}
     updateCollectionUI();
@@ -273,7 +306,7 @@
     return best;
   }
 
-  function captureCreature(c){
+  function captureCreature(c,showToast=true){
     if(!c) return;
     const specimen={
       capturedAt:new Date().toISOString(),
@@ -286,10 +319,12 @@
     };
     collection.unshift(specimen);
     saveCollection();
-    const toast=document.getElementById('captureToast');
-    toast.textContent=specimen.label+' CAPTURED';
-    toast.classList.add('show');
-    setTimeout(()=>toast.classList.remove('show'),900);
+    if(showToast){
+      const toast=document.getElementById('captureToast');
+      toast.textContent=specimen.label+' CAPTURED';
+      toast.classList.add('show');
+      setTimeout(()=>toast.classList.remove('show'),900);
+    }
     burst(c.x,c.y,[255,255,255],26);
   }
 
@@ -366,7 +401,16 @@
       const meta=document.createElement('div');
       meta.className='meta';
       meta.innerHTML=`${s.label}<br>GEN ${s.generation} / ${s.gene.blocks.length} BLOCKS`;
-      el.appendChild(cv); el.appendChild(meta);
+      const del=document.createElement('button');
+      del.className='deleteSpecimen';
+      del.textContent='DELETE';
+      del.onclick=(ev)=>{
+        ev.stopPropagation();
+        collection.splice(i,1);
+        saveCollection();
+        document.getElementById('specimenDetail').textContent='捕獲した生命を選択すると詳細が表示されます。';
+      };
+      el.appendChild(cv); el.appendChild(meta); el.appendChild(del);
       el.onclick=()=>showSpecimenDetail(s);
       grid.appendChild(el);
       drawSpecimenPreview(cv,s);
@@ -660,6 +704,20 @@
       ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();
     }
     ctx.globalAlpha=1;
+
+    if(lassoActive && lassoPoints.length>1){
+      ctx.save();
+      ctx.strokeStyle='rgba(255,255,255,.9)';
+      ctx.fillStyle='rgba(255,255,255,.06)';
+      ctx.lineWidth=1.5;
+      ctx.setLineDash([5,5]);
+      ctx.beginPath();
+      ctx.moveTo(lassoPoints[0].x,lassoPoints[0].y);
+      for(let i=1;i<lassoPoints.length;i++) ctx.lineTo(lassoPoints[i].x,lassoPoints[i].y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
   }
 
   function update(dt){
@@ -706,6 +764,15 @@
 
   canvas.addEventListener('pointerdown',e=>{
     const p=point(e);
+
+    if(lassoMode){
+      lassoActive=true;
+      lassoPoints=[p];
+      pointer.down=false;
+      canvas.setPointerCapture?.(e.pointerId);
+      return;
+    }
+
     const hit=findCreatureAt(p.x,p.y);
     if(hit){
       captureCreature(hit);
@@ -716,14 +783,33 @@
     addFood(p.x,p.y,8);
     canvas.setPointerCapture?.(e.pointerId);
   });
+
   canvas.addEventListener('pointermove',e=>{
     const p=point(e);
+
+    if(lassoMode && lassoActive){
+      const last=lassoPoints[lassoPoints.length-1];
+      if(!last || Math.hypot(p.x-last.x,p.y-last.y)>4) lassoPoints.push(p);
+      return;
+    }
+
     pointer.vx=p.x-pointer.x;pointer.vy=p.y-pointer.y;
     pointer.px=pointer.x;pointer.py=pointer.y;pointer.x=p.x;pointer.y=p.y;
     if(pointer.down && Math.random()<.35) addFood(p.x,p.y,1);
   });
-  canvas.addEventListener('pointerup',()=>{pointer.down=false;pointer.vx=pointer.vy=0});
-  canvas.addEventListener('pointercancel',()=>{pointer.down=false});
+
+  canvas.addEventListener('pointerup',()=>{
+    if(lassoMode && lassoActive){
+      finishLassoCapture();
+      return;
+    }
+    pointer.down=false;pointer.vx=pointer.vy=0;
+  });
+
+  canvas.addEventListener('pointercancel',()=>{
+    if(lassoMode){lassoActive=false;lassoPoints=[];}
+    pointer.down=false;
+  });
 
   document.getElementById('feedBtn').onclick=()=>addFood(W*.5,H*.5,45);
   document.getElementById('burstBtn').onclick=()=>{
@@ -923,6 +1009,15 @@
   }
 
   document.getElementById('soundBtn').onclick=toggleBGM;
+  document.getElementById('lassoModeBtn').onclick=()=>{
+    lassoMode=!lassoMode;
+    lassoActive=false;
+    lassoPoints=[];
+    const b=document.getElementById('lassoModeBtn');
+    b.classList.toggle('active',lassoMode);
+    b.textContent=lassoMode?'LASSO ON':'LASSO CAPTURE';
+  };
+
   document.getElementById('collectionBtn').onclick=()=>{
     document.getElementById('collectionPanel').classList.toggle('open');
     updateCollectionUI();
