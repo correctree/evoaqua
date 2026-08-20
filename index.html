@@ -68,7 +68,7 @@
     BGM：POPULATION / GENERATION / MUTATION に応じて単純→複雑へ生成<br>
     クリック／タップ：餌を投入<br>
     ドラッグ：水流を発生<br>
-    生物は餌を獲得し、形・色・接続を変異させ、分裂または交配します。
+    生物は餌を獲得し、形・色・接続を変異させ、分裂または交配します。高世代ほど動き・伸縮・色彩が複雑化します。
   </div>
 </div>
 
@@ -183,6 +183,8 @@
       energy:rand(55,95), age:0, generation,
       gene:gene||makeGene(),
       cooldown:rand(0,300), pulse:rand(Math.PI*2),
+      phaseA:rand(Math.PI*2), phaseB:rand(Math.PI*2),
+      turnBias:rand(-1,1), wobbleSeed:rand(1000),
       id:Math.random().toString(36).slice(2)
     };
   }
@@ -245,6 +247,53 @@
     c.vx += Math.sin((c.y+time*.02)*.006)*.00055*dt;
     c.vy += Math.cos((c.x-time*.018)*.005)*.00045*dt;
 
+    // Motion evolves with generation:
+    // early generations drift simply, later ones acquire meander, orbit, pulse and burst behavior.
+    const evo = clamp(c.generation/36,0,1);
+    const phase = c.generation/6;
+    c.phaseA += (.010 + evo*.018) * dt;
+    c.phaseB += (.006 + evo*.013) * dt;
+
+    // meandering force
+    if(c.generation>=4){
+      c.vx += Math.cos(c.phaseA + c.wobbleSeed)*.0028*evo*dt;
+      c.vy += Math.sin(c.phaseA*1.17 + c.wobbleSeed)*.0028*evo*dt;
+    }
+
+    // lateral swimming / S-curve
+    if(c.generation>=8){
+      const sp0=Math.hypot(c.vx,c.vy)||1;
+      const nx=-c.vy/sp0, ny=c.vx/sp0;
+      const lateral=Math.sin(c.phaseB*1.8 + phase)*.0055*evo;
+      c.vx += nx*lateral*dt;
+      c.vy += ny*lateral*dt;
+    }
+
+    // slow orbital tendency around nearby conspecifics
+    if(c.generation>=16){
+      let near=null, nd=Infinity;
+      for(const o of creatures){
+        if(o===c) continue;
+        const dx=o.x-c.x,dy=o.y-c.y,d2=dx*dx+dy*dy;
+        if(d2<nd && d2<110*110){ nd=d2; near=o; }
+      }
+      if(near){
+        const dx=near.x-c.x,dy=near.y-c.y,d=Math.hypot(dx,dy)||1;
+        const orbit=.0035*evo;
+        c.vx += (-dy/d)*orbit*dt;
+        c.vy += ( dx/d)*orbit*dt;
+      }
+    }
+
+    // high-generation burst / contraction rhythm
+    if(c.generation>=24){
+      const burst=Math.max(0,Math.sin(c.phaseA*.63 + c.phaseB*.41));
+      const boost=burst*burst*.0065*evo;
+      const a=Math.atan2(c.vy,c.vx)+Math.sin(c.phaseB)*.45;
+      c.vx += Math.cos(a)*boost*dt;
+      c.vy += Math.sin(a)*boost*dt;
+    }
+
     if(pointer.down){
       const dx=c.x-pointer.x,dy=c.y-pointer.y,d=Math.hypot(dx,dy);
       if(d<190){
@@ -254,7 +303,7 @@
       }
     }
 
-    const maxV=1.25*c.gene.speed;
+    const maxV=(1.25 + evo*.85)*c.gene.speed;
     const sp=Math.hypot(c.vx,c.vy);
     if(sp>maxV){c.vx=c.vx/sp*maxV;c.vy=c.vy/sp*maxV}
     c.vx*=.996; c.vy*=.996;
@@ -295,26 +344,55 @@
     });
   }
 
-  function drawBlock(b){
+  function drawBlock(b, evo=0, phase=0){
     ctx.save();
-    ctx.translate(b.x,b.y); ctx.rotate(b.r);
+
+    const stretch = 1 + Math.sin(phase + b.r*1.7)*(.08 + evo*.42);
+    const squash  = 1 + Math.cos(phase*1.23 + b.x*.07)*(.05 + evo*.28);
+    const driftX  = Math.sin(phase*.73 + b.y*.09)*evo*3.2;
+    const driftY  = Math.cos(phase*.81 + b.x*.08)*evo*3.2;
+
+    ctx.translate(b.x+driftX,b.y+driftY);
+    ctx.rotate(b.r + Math.sin(phase*.57+b.x*.03)*evo*.22);
+    ctx.scale(stretch,squash);
+
     const [r,g,bl]=b.color;
-    ctx.fillStyle=`rgba(${r},${g},${bl},${b.alpha})`;
+    const alt = palette[(Math.abs(Math.floor(b.x+b.y+b.s)) + Math.floor(phase)) % palette.length];
+
+    let fill;
+    if(evo>.22){
+      const grad=ctx.createLinearGradient(-b.s*1.4,-b.s,b.s*1.4,b.s);
+      grad.addColorStop(0,`rgba(${r},${g},${bl},${b.alpha})`);
+      grad.addColorStop(.5,`rgba(${Math.round((r+alt[0])/2)},${Math.round((g+alt[1])/2)},${Math.round((bl+alt[2])/2)},${Math.min(1,b.alpha+.08)})`);
+      grad.addColorStop(1,`rgba(${alt[0]},${alt[1]},${alt[2]},${Math.max(.32,b.alpha*.8)})`);
+      fill=grad;
+    }else{
+      fill=`rgba(${r},${g},${bl},${b.alpha})`;
+    }
+
+    ctx.fillStyle=fill;
     ctx.strokeStyle=`rgba(${r},${g},${bl},${Math.min(1,b.alpha+.15)})`;
     ctx.lineWidth=1.4;
+
     if(b.type==='circle'){
       ctx.beginPath();ctx.arc(0,0,b.s,0,Math.PI*2);ctx.fill();
     }else if(b.type==='square'){
-      ctx.fillRect(-b.s,-b.s,b.s*2,b.s*2);
+      const pulse=1+Math.sin(phase*1.4)*evo*.18;
+      ctx.fillRect(-b.s*pulse,-b.s,b.s*2*pulse,b.s*2);
     }else if(b.type==='triangle'){
-      ctx.beginPath();ctx.moveTo(b.s,0);ctx.lineTo(-b.s*.75,b.s*.75);ctx.lineTo(-b.s*.75,-b.s*.75);ctx.closePath();ctx.fill();
+      const tip=b.s*(1+Math.sin(phase*1.1)*evo*.45);
+      ctx.beginPath();ctx.moveTo(tip,0);ctx.lineTo(-b.s*.75,b.s*.75);ctx.lineTo(-b.s*.75,-b.s*.75);ctx.closePath();ctx.fill();
     }else if(b.type==='line'){
-      ctx.lineWidth=Math.max(2,b.s*.35);ctx.beginPath();ctx.moveTo(-b.s*1.25,0);ctx.lineTo(b.s*1.25,0);ctx.stroke();
+      const ext=1.25 + Math.sin(phase*1.55)*evo*.75;
+      ctx.lineWidth=Math.max(2,b.s*.35*(1+evo*.25));
+      ctx.beginPath();ctx.moveTo(-b.s*ext,0);ctx.lineTo(b.s*ext,0);ctx.stroke();
     }else{
       ctx.globalAlpha*=.48;
-      ctx.beginPath();ctx.ellipse(0,0,b.s*1.35,b.s*.72,0,0,Math.PI*2);ctx.fill();
+      const sx=1.35+Math.sin(phase*.9)*evo*.5;
+      const sy=.72+Math.cos(phase*1.2)*evo*.22;
+      ctx.beginPath();ctx.ellipse(0,0,b.s*sx,b.s*sy,0,0,Math.PI*2);ctx.fill();
       ctx.globalAlpha=1;
-      ctx.beginPath();ctx.ellipse(0,0,b.s*1.35,b.s*.72,0,0,Math.PI*2);ctx.stroke();
+      ctx.beginPath();ctx.ellipse(0,0,b.s*sx,b.s*sy,0,0,Math.PI*2);ctx.stroke();
     }
     ctx.restore();
   }
@@ -322,29 +400,49 @@
   function drawCreature(c){
     ctx.save();
     ctx.translate(c.x,c.y);
-    ctx.rotate(c.angle);
-    const scale=clamp(.78+c.energy/180,.78,1.45);
-    ctx.scale(scale,scale);
 
-    // connectors first
+    const evo=clamp(c.generation/36,0,1);
+    const localPhase=c.pulse + c.phaseA*.7;
+
+    // body orientation itself becomes less rigid at high generations
+    ctx.rotate(c.angle + Math.sin(localPhase*.7)*evo*.18);
+    const scale=clamp(.78+c.energy/180,.78,1.45);
+    const breath=1+Math.sin(localPhase*.9)*evo*.10;
+    ctx.scale(scale*breath,scale*(2-breath));
+
+    // connectors first — later generations become elastic curves
     ctx.strokeStyle='rgba(255,255,255,.10)';
-    ctx.lineWidth=1;
+    ctx.lineWidth=1+evo*.6;
     for(let i=1;i<c.gene.blocks.length;i++){
       const a=c.gene.blocks[i-1], b=c.gene.blocks[i];
-      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(a.x,a.y);
+      if(evo>.25){
+        const mx=(a.x+b.x)/2 + Math.sin(localPhase+i)*12*evo;
+        const my=(a.y+b.y)/2 + Math.cos(localPhase*.83+i)*12*evo;
+        ctx.quadraticCurveTo(mx,my,b.x,b.y);
+      }else{
+        ctx.lineTo(b.x,b.y);
+      }
+      ctx.stroke();
     }
 
-    const wobble=Math.sin(c.pulse)*.04;
-    ctx.rotate(wobble);
-    for(const b of c.gene.blocks) drawBlock(b);
+    for(let i=0;i<c.gene.blocks.length;i++){
+      const b=c.gene.blocks[i];
+      drawBlock(b,evo,localPhase+i*.47);
+    }
 
     // faint energy halo
     ctx.globalCompositeOperation='screen';
-    ctx.globalAlpha=.08;
-    ctx.fillStyle='white';
+    ctx.globalAlpha=.06+evo*.05;
+    const halo=ctx.createRadialGradient(0,0,2,0,0,16+Math.sqrt(c.gene.blocks.length)*10);
+    halo.addColorStop(0,'rgba(255,255,255,.65)');
+    halo.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=halo;
     ctx.beginPath();
-    ctx.arc(0,0,14+Math.sqrt(c.gene.blocks.length)*8,0,Math.PI*2);
+    ctx.arc(0,0,16+Math.sqrt(c.gene.blocks.length)*10,0,Math.PI*2);
     ctx.fill();
+
     ctx.restore();
   }
 
