@@ -57,7 +57,7 @@
     <div>POPULATION<b id="pop">0</b></div>
     <div>GENERATION<b id="gen">0</b></div>
     <div>FOOD<b id="food">0</b></div>
-    <div>MUTATIONS<b id="mut">0</b></div>
+    <div>MUTATIONS<b id="mut">0</b></div><div>MUSIC PHASE<b id="phase">0</b></div>
   </div>
   <div class="row">
     <button id="feedBtn">ADD FOOD</button>
@@ -414,6 +414,7 @@
     document.getElementById('gen').textContent=maxGeneration;
     document.getElementById('food').textContent=foods.length;
     document.getElementById('mut').textContent=mutationCount;
+    document.getElementById('phase').textContent=generationPhase(maxGeneration);
   }
 
   let last=performance.now();
@@ -502,71 +503,132 @@
   }
 
   function getComplexity(){
+    // Population and mutation saturate, but generation keeps evolving forever.
+    // log growth prevents runaway density while still changing at every generation.
     const popN=clamp((creatures.length-18)/52,0,1);
-    const genN=clamp(maxGeneration/14,0,1);
     const mutN=clamp(mutationCount/90,0,1);
-    return clamp(popN*.28 + genN*.42 + mutN*.30,0,1);
+    const genFlow=1-Math.exp(-maxGeneration/18); // global complexity approaches 1 smoothly
+    return clamp(popN*.24 + genFlow*.46 + mutN*.30,0,1);
+  }
+
+  function generationPhase(gen){
+    // Every 8 generations enters a new musical ecology.
+    // phase keeps increasing without a fixed maximum.
+    return Math.floor(gen/8);
   }
 
   function bgmPulse(){
     if(!bgmEnabled || !audioCtx) return;
     const c=getComplexity();
     const pop=creatures.length, gen=maxGeneration, mut=mutationCount;
+    const phase=generationPhase(gen);
+    const localGen=gen%8;
 
-    // evolution increases tempo, note density, harmonic layers and range
-    const bpm=54 + c*72;
+    // The global density becomes richer, while phase continuously changes the musical grammar.
+    const phaseTempo=(phase%5)*5;
+    const bpm=50 + c*62 + phaseTempo;
     const beatMs=60000/bpm;
-    const scale = c<.33 ? scales[0] : c<.68 ? scales[1] : scales[2];
-    const root = 43 + (gen%5);
-    const octaveSpan = 1 + Math.floor(c*2.8);
-    const density = .24 + c*.68;
+
+    // Cycle through different pitch ecologies every 8 generations.
+    const scaleBank=[
+      [0,2,5,7,9],
+      [0,2,3,5,7,9,10],
+      [0,1,3,5,7,8,10],
+      [0,2,4,6,7,9,11],
+      [0,1,4,5,7,8,11],
+      [0,2,3,6,7,9,10,11]
+    ];
+    const scale=scaleBank[phase%scaleBank.length];
+
+    // Root migrates slowly through pitch space instead of stopping.
+    const root=38 + ((phase*3 + Math.floor(gen/3))%18);
+    const octaveSpan=1 + Math.min(4,Math.floor(c*2.5)+Math.floor(phase/4)%3);
+    const density=clamp(.20 + c*.54 + (phase%4)*.055, .2, .94);
+
+    // Meter evolves: 4, 5, 7, 3, 6-step cycles.
+    const meters=[4,5,7,3,6];
+    const meter=meters[phase%meters.length];
 
     // bass / organism pulse
-    if(bgmStep%4===0){
-      const degree=scale[(bgmStep/4 + gen)%scale.length|0];
-      playTone(midiToFreq(root+degree), .42+c*.12, .055, c>.7?'triangle':'sine', 0, -.2);
+    if(bgmStep%meter===0){
+      const degree=scale[(Math.floor(bgmStep/meter)+gen)%scale.length];
+      const bassType=(phase%3===2)?'triangle':'sine';
+      playTone(midiToFreq(root+degree), .34+c*.18, .05, bassType, 0, -.25);
     }
 
-    // primary melodic cells: mutation shifts pitch selection
+    // primary melodic cells
     if(Math.random()<density){
-      const degree=scale[(bgmStep + mut + Math.floor(Math.random()*scale.length))%scale.length];
+      const degree=scale[(bgmStep + mut + phase + Math.floor(Math.random()*scale.length))%scale.length];
       const oct=Math.floor(Math.random()*(octaveSpan+1))*12;
-      const note=root+12+degree+oct;
-      playTone(midiToFreq(note), .11+c*.22, .032+c*.025, c>.55?'triangle':'sine', rand(-5,5), rand(-.65,.65));
+      let note=root+12+degree+oct;
+
+      // Later phases occasionally create larger evolutionary leaps.
+      if(phase>=3 && Math.random()<Math.min(.32,phase*.018)) note += choice([-12,12,19,-5]);
+
+      const oscTypes=['sine','triangle','sine','square'];
+      const type=oscTypes[phase%oscTypes.length];
+      playTone(midiToFreq(note), .09+c*.25, .026+c*.025, type, rand(-4-phase*.3,4+phase*.3), rand(-.75,.75));
     }
 
-    // population adds parallel voices
-    const voices = 1 + Math.floor(clamp((pop-25)/13,0,3));
+    // Population controls polyphony; later generations unlock additional ecosystem voices.
+    const voices=1+Math.min(6,Math.floor(clamp((pop-22)/10,0,4))+Math.floor(phase/5));
     for(let v=1;v<voices;v++){
-      if(Math.random()<c*.45){
+      const probability=clamp(.10+c*.22+(phase%3)*.035,0,.48);
+      if(Math.random()<probability){
         const degree=choice(scale);
-        const interval = [7,12,14,17][(v+gen)%4];
-        playTone(midiToFreq(root+12+degree+interval), .08+c*.16, .014, v%2?'square':'triangle', rand(-8,8), rand(-1,1));
+        const intervalPool=[5,7,10,12,14,17,19,24];
+        const interval=intervalPool[(v+phase+gen)%intervalPool.length];
+        playTone(
+          midiToFreq(root+12+degree+interval),
+          .07+c*.16,
+          .010+Math.min(.012,phase*.0007),
+          v%3===0?'square':'triangle',
+          rand(-10,10),
+          rand(-1,1)
+        );
       }
     }
 
-    // mutations add percussive irregularity
-    if(c>.22 && (bgmStep%2===0 || Math.random()<c*.45)) noiseTick(.006+c*.012,.025);
-    if(c>.58 && Math.random()<.22+c*.28) noiseTick(.008+c*.012,.06);
+    // Mutation controls irregular percussion and micro-instability.
+    const mutActivity=clamp(mut/120,0,1);
+    if(c>.18 && (bgmStep%2===0 || Math.random()<mutActivity*.5)) noiseTick(.005+c*.010,.02+.01*(phase%3));
+    if(phase>=2 && Math.random()<.10+mutActivity*.25) noiseTick(.006+c*.010,.045+.01*(phase%4));
 
-    // generation adds sustained upper harmonic "ecosystem"
-    if(c>.42 && bgmStep%8===0){
-      const degree=scale[(gen+bgmStep)%scale.length];
-      playTone(midiToFreq(root+24+degree), .8+c*.75, .012+c*.014, 'sine', rand(-12,12), .25);
+    // Long ecosystem tones become harmonically richer as generations rise.
+    const droneDiv=[12,10,8,7,6][phase%5];
+    if(bgmStep%droneDiv===0){
+      const degree=scale[(gen+bgmStep+phase)%scale.length];
+      playTone(midiToFreq(root+24+degree), .7+c*.8, .010+c*.014, 'sine', rand(-12-phase*.2,12+phase*.2), .25);
+      if(phase>=4 && phase%2===0){
+        const second=scale[(degree+2)%scale.length] ?? choice(scale);
+        playTone(midiToFreq(root+31+second), .55+c*.55, .008+c*.010, 'triangle', rand(-8,8), -.25);
+      }
     }
 
-    // audible signal when state has meaningfully changed
+    // At the start of every new 8-generation phase, announce a new musical ecology.
     if(gen>lastGen){
-      playTone(midiToFreq(root+36+scale[gen%scale.length]), .7, .04, 'sine', 0, 0);
+      const newPhase=generationPhase(gen);
+      const oldPhase=generationPhase(lastGen);
+      if(newPhase>oldPhase){
+        const chord=[0,7,12,choice(scale)+12];
+        chord.forEach((iv,i)=>playTone(midiToFreq(root+24+iv), .8+i*.12, .026, i%2?'triangle':'sine',0,(i-1.5)*.25));
+      }else{
+        playTone(midiToFreq(root+30+scale[gen%scale.length]), .5, .026, 'sine', 0, 0);
+      }
     }
-    if(mut-lastMut>=5 && c>.25){
-      playTone(midiToFreq(root+24+choice(scale)), .22, .025, 'triangle', rand(-15,15), rand(-.5,.5));
+
+    if(mut-lastMut>=5 && c>.22){
+      playTone(midiToFreq(root+24+choice(scale)), .18, .020, 'triangle', rand(-18,18), rand(-.5,.5));
     }
+
     lastPop=pop; lastGen=gen; lastMut=mut;
     bgmStep++;
 
+    // Phase also changes subdivision, so rhythm never permanently settles.
+    const subdivisions=[2,2,3,2,4];
+    const sub=subdivisions[phase%subdivisions.length];
     clearTimeout(bgmTimer);
-    bgmTimer=setTimeout(bgmPulse, Math.max(110,beatMs/2));
+    bgmTimer=setTimeout(bgmPulse, Math.max(90,beatMs/sub));
   }
 
   async function toggleBGM(){
