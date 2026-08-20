@@ -286,7 +286,7 @@ window.addEventListener('error',(e)=>{
     active:false,
     timer:0,
     duration:0,
-    cooldown:rand(1500,2600),
+    cooldown:2000,
     angle:0,
     strength:0
   };
@@ -994,6 +994,10 @@ window.addEventListener('error',(e)=>{
 
   function reset(){
     creatures=[]; foods=[]; particles=[]; predators=[];
+    flowEvent.active=false;
+    flowEvent.timer=0;
+    flowEvent.duration=0;
+    flowEvent.cooldown=rand(1500,2600);
     mutationCount=0; maxGeneration=0;
     for(let i=0;i<30;i++) creatures.push(makeCreature());
     for(let i=0;i<95;i++) addFood(rand(W),rand(H));
