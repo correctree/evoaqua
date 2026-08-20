@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>EVOLVING AQUARIUM</title>
+<style>
+  :root{
+    --bg:#05070b;
+    --fg:#eef3ff;
+    --muted:#8d97aa;
+    --panel:rgba(10,14,22,.72);
+    --line:rgba(255,255,255,.12);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+  #ui{
+    position:fixed;left:18px;top:18px;z-index:10;
+    width:min(320px,calc(100vw - 36px));
+    padding:14px 14px 12px;
+    border:1px solid var(--line);
+    background:var(--panel);
+    backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);
+    border-radius:14px;
+  }
+  h1{font-size:14px;letter-spacing:.16em;margin:0 0 10px;font-weight:700}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:11px;color:var(--muted)}
+  .stats b{display:block;color:var(--fg);font-size:17px;font-weight:600;letter-spacing:.02em}
+  .row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  button{
+    appearance:none;border:1px solid var(--line);background:rgba(255,255,255,.05);
+    color:var(--fg);padding:8px 10px;border-radius:10px;font-size:11px;cursor:pointer
+  }
+  button:hover{background:rgba(255,255,255,.1)}
+  .hint{margin-top:10px;font-size:10px;line-height:1.5;color:var(--muted)}
+  #legend{
+    position:fixed;right:18px;bottom:18px;z-index:10;
+    padding:10px 12px;border:1px solid var(--line);background:rgba(10,14,22,.62);
+    backdrop-filter:blur(12px);border-radius:12px;font-size:10px;color:var(--muted)
+  }
+  #legend span{display:inline-flex;align-items:center;margin-right:10px}
+  i{width:8px;height:8px;border-radius:50%;background:#fff;display:inline-block;margin-right:5px;opacity:.8}
+  @media (max-width:680px){
+    #ui{left:10px;top:10px}
+    #legend{right:10px;bottom:10px;max-width:70vw}
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="ui">
+  <h1>EVOLVING AQUARIUM</h1>
+  <div class="stats">
+    <div>POPULATION<b id="pop">0</b></div>
+    <div>GENERATION<b id="gen">0</b></div>
+    <div>FOOD<b id="food">0</b></div>
+    <div>MUTATIONS<b id="mut">0</b></div>
+  </div>
+  <div class="row">
+    <button id="feedBtn">ADD FOOD</button>
+    <button id="burstBtn">MUTATE</button>
+    <button id="resetBtn">RESET</button>
+  </div>
+  <div class="hint">
+    クリック／タップ：餌を投入<br>
+    ドラッグ：水流を発生<br>
+    生物は餌を獲得し、形・色・接続を変異させ、分裂または交配します。
+  </div>
+</div>
+
+<div id="legend">
+  <span><i></i>food</span>
+  abstract blocks = genes / form / behavior
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d', { alpha:false });
+  let W=innerWidth, H=innerHeight, DPR=Math.min(devicePixelRatio||1,2);
+  let creatures=[], foods=[], particles=[];
+  let mutationCount=0, maxGeneration=0, time=0;
+  let pointer={x:W/2,y:H/2,down:false,px:W/2,py:H/2,vx:0,vy:0};
+
+  const SHAPES=['circle','square','triangle','line','membrane'];
+  const palette=[
+    [255,92,120],[70,211,255],[255,219,88],[155,111,255],
+    [88,244,171],[255,142,77],[240,240,246]
+  ];
+
+  function resize(){
+    W=innerWidth; H=innerHeight; DPR=Math.min(devicePixelRatio||1,2);
+    canvas.width=W*DPR; canvas.height=H*DPR;
+    canvas.style.width=W+'px'; canvas.style.height=H+'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  addEventListener('resize',resize); resize();
+
+  const rand=(a=1,b=0)=>Math.random()*(a-b)+b;
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const choice=a=>a[(Math.random()*a.length)|0];
+
+  function makeGene(base=null){
+    const g = base ? JSON.parse(JSON.stringify(base)) : {
+      blocks: [],
+      hueShift: rand(-18,18),
+      metabolism: rand(.8,1.25),
+      curiosity: rand(.5,1.5),
+      sociability: rand(.4,1.4),
+      speed: rand(.55,1.45)
+    };
+    if(!base){
+      const n=3+((Math.random()*4)|0);
+      for(let i=0;i<n;i++) g.blocks.push(newBlock(i));
+    }
+    return g;
+  }
+
+  function newBlock(i=0){
+    return {
+      type: choice(SHAPES),
+      x: rand(-18,18)+(i?rand(-8,8):0),
+      y: rand(-18,18),
+      s: rand(5,15),
+      r: rand(-Math.PI,Math.PI),
+      color: choice(palette).slice(),
+      alpha: rand(.45,1)
+    };
+  }
+
+  function mutateGene(g, strength=1){
+    const n=JSON.parse(JSON.stringify(g));
+    const ops=['add','remove','move','resize','recolor','type','swap'];
+    const count=1+((Math.random()*(2+strength))|0);
+    for(let k=0;k<count;k++){
+      const op=choice(ops);
+      if(op==='add' && n.blocks.length<12) n.blocks.push(newBlock());
+      else if(op==='remove' && n.blocks.length>2) n.blocks.splice((Math.random()*n.blocks.length)|0,1);
+      else if(op==='move'){
+        const b=choice(n.blocks); b.x+=rand(-10,10)*strength; b.y+=rand(-10,10)*strength;
+      } else if(op==='resize'){
+        const b=choice(n.blocks); b.s=clamp(b.s*rand(1.35,.72),3,23);
+      } else if(op==='recolor'){
+        const b=choice(n.blocks); b.color=choice(palette).slice(); b.alpha=rand(.45,1);
+      } else if(op==='type'){
+        choice(n.blocks).type=choice(SHAPES);
+      } else if(op==='swap' && n.blocks.length>1){
+        const a=(Math.random()*n.blocks.length)|0, b=(Math.random()*n.blocks.length)|0;
+        [n.blocks[a].x,n.blocks[b].x]=[n.blocks[b].x,n.blocks[a].x];
+        [n.blocks[a].y,n.blocks[b].y]=[n.blocks[b].y,n.blocks[a].y];
+      }
+    }
+    n.hueShift += rand(-8,8);
+    n.metabolism=clamp(n.metabolism+rand(-.08,.08),.55,1.6);
+    n.curiosity=clamp(n.curiosity+rand(-.12,.12),.2,2);
+    n.sociability=clamp(n.sociability+rand(-.12,.12),.1,2);
+    n.speed=clamp(n.speed+rand(-.12,.12),.35,2);
+    mutationCount++;
+    return n;
+  }
+
+  function crossGenes(a,b){
+    const child=makeGene();
+    child.blocks=[];
+    const pool=[...a.blocks,...b.blocks];
+    const target=clamp(Math.round((a.blocks.length+b.blocks.length)/2+rand(-1.5,1.5)),2,12);
+    for(let i=0;i<target;i++) child.blocks.push(JSON.parse(JSON.stringify(choice(pool))));
+    child.metabolism=(a.metabolism+b.metabolism)/2;
+    child.curiosity=(a.curiosity+b.curiosity)/2;
+    child.sociability=(a.sociability+b.sociability)/2;
+    child.speed=(a.speed+b.speed)/2;
+    return mutateGene(child,.65);
+  }
+
+  function makeCreature(x=rand(W),y=rand(H),gene=null,generation=0){
+    return {
+      x,y,vx:rand(-.7,.7),vy:rand(-.7,.7),
+      angle:rand(Math.PI*2), spin:rand(-.006,.006),
+      energy:rand(55,95), age:0, generation,
+      gene:gene||makeGene(),
+      cooldown:rand(0,300), pulse:rand(Math.PI*2),
+      id:Math.random().toString(36).slice(2)
+    };
+  }
+
+  function addFood(x=rand(W),y=rand(H),n=1){
+    for(let i=0;i<n;i++){
+      foods.push({x:x+rand(-18,18),y:y+rand(-18,18),r:rand(1.5,3.8),life:1});
+    }
+  }
+
+  function reset(){
+    creatures=[]; foods=[]; particles=[];
+    mutationCount=0; maxGeneration=0;
+    for(let i=0;i<30;i++) creatures.push(makeCreature());
+    for(let i=0;i<95;i++) addFood(rand(W),rand(H));
+  }
+
+  function nearestFood(c){
+    let best=null,bd=Infinity;
+    for(const f of foods){
+      const dx=f.x-c.x,dy=f.y-c.y,d=dx*dx+dy*dy;
+      if(d<bd){bd=d;best=f}
+    }
+    return best;
+  }
+
+  function updateCreature(c,dt){
+    c.age += dt;
+    c.cooldown -= dt;
+    c.pulse += .018*dt;
+    c.energy -= .0045*dt*c.gene.metabolism*(1+c.gene.blocks.length*.035);
+
+    const f=nearestFood(c);
+    if(f){
+      const dx=f.x-c.x,dy=f.y-c.y,d=Math.hypot(dx,dy)||1;
+      const pull=.006*c.gene.curiosity*c.gene.speed;
+      c.vx += dx/d*pull*dt;
+      c.vy += dy/d*pull*dt;
+      if(d<15+Math.sqrt(c.gene.blocks.length)*4){
+        const idx=foods.indexOf(f);
+        if(idx>=0) foods.splice(idx,1);
+        c.energy=Math.min(150,c.energy+rand(12,20));
+        burst(f.x,f.y,choice(palette));
+        if(Math.random()<.12) c.gene=mutateGene(c.gene,.45);
+      }
+    }
+
+    // social attraction / repulsion
+    for(const o of creatures){
+      if(o===c) continue;
+      const dx=o.x-c.x,dy=o.y-c.y,d2=dx*dx+dy*dy;
+      if(d2<140*140){
+        const d=Math.sqrt(d2)||1;
+        if(d<24){ c.vx-=dx/d*.008*dt; c.vy-=dy/d*.008*dt; }
+        else if(d<100){ c.vx+=dx/d*.0013*c.gene.sociability*dt; c.vy+=dy/d*.0013*c.gene.sociability*dt; }
+      }
+    }
+
+    // subtle water drift
+    c.vx += Math.sin((c.y+time*.02)*.006)*.00055*dt;
+    c.vy += Math.cos((c.x-time*.018)*.005)*.00045*dt;
+
+    if(pointer.down){
+      const dx=c.x-pointer.x,dy=c.y-pointer.y,d=Math.hypot(dx,dy);
+      if(d<190){
+        const k=(1-d/190)*.015;
+        c.vx += pointer.vx*k*dt;
+        c.vy += pointer.vy*k*dt;
+      }
+    }
+
+    const maxV=1.25*c.gene.speed;
+    const sp=Math.hypot(c.vx,c.vy);
+    if(sp>maxV){c.vx=c.vx/sp*maxV;c.vy=c.vy/sp*maxV}
+    c.vx*=.996; c.vy*=.996;
+    c.x+=c.vx*dt; c.y+=c.vy*dt;
+    c.angle=Math.atan2(c.vy,c.vx)+Math.sin(c.pulse)*.15;
+
+    const pad=34;
+    if(c.x<-pad)c.x=W+pad; if(c.x>W+pad)c.x=-pad;
+    if(c.y<-pad)c.y=H+pad; if(c.y>H+pad)c.y=-pad;
+
+    // reproduction
+    if(c.energy>112 && c.cooldown<=0 && creatures.length<70){
+      if(Math.random()<.0012*dt){
+        const candidates=creatures.filter(o=>o!==c && o.energy>80 && Math.hypot(o.x-c.x,o.y-c.y)<90 && o.cooldown<=0);
+        if(candidates.length && Math.random()<.58){
+          const o=choice(candidates);
+          const g=crossGenes(c.gene,o.gene);
+          const gen=Math.max(c.generation,o.generation)+1;
+          creatures.push(makeCreature((c.x+o.x)/2,(c.y+o.y)/2,g,gen));
+          c.energy-=28; o.energy-=22; c.cooldown=o.cooldown=420;
+          maxGeneration=Math.max(maxGeneration,gen);
+          burst((c.x+o.x)/2,(c.y+o.y)/2,[255,255,255],22);
+        }else{
+          const g=mutateGene(c.gene,.9);
+          const gen=c.generation+1;
+          creatures.push(makeCreature(c.x+rand(-14,14),c.y+rand(-14,14),g,gen));
+          c.energy-=34; c.cooldown=480; maxGeneration=Math.max(maxGeneration,gen);
+          burst(c.x,c.y,[255,255,255],18);
+        }
+      }
+    }
+  }
+
+  function burst(x,y,color,n=10){
+    for(let i=0;i<n;i++) particles.push({
+      x,y,vx:rand(-1.6,1.6),vy:rand(-1.6,1.6),life:1,
+      color:color.slice(),r:rand(1,3)
+    });
+  }
+
+  function drawBlock(b){
+    ctx.save();
+    ctx.translate(b.x,b.y); ctx.rotate(b.r);
+    const [r,g,bl]=b.color;
+    ctx.fillStyle=`rgba(${r},${g},${bl},${b.alpha})`;
+    ctx.strokeStyle=`rgba(${r},${g},${bl},${Math.min(1,b.alpha+.15)})`;
+    ctx.lineWidth=1.4;
+    if(b.type==='circle'){
+      ctx.beginPath();ctx.arc(0,0,b.s,0,Math.PI*2);ctx.fill();
+    }else if(b.type==='square'){
+      ctx.fillRect(-b.s,-b.s,b.s*2,b.s*2);
+    }else if(b.type==='triangle'){
+      ctx.beginPath();ctx.moveTo(b.s,0);ctx.lineTo(-b.s*.75,b.s*.75);ctx.lineTo(-b.s*.75,-b.s*.75);ctx.closePath();ctx.fill();
+    }else if(b.type==='line'){
+      ctx.lineWidth=Math.max(2,b.s*.35);ctx.beginPath();ctx.moveTo(-b.s*1.25,0);ctx.lineTo(b.s*1.25,0);ctx.stroke();
+    }else{
+      ctx.globalAlpha*=.48;
+      ctx.beginPath();ctx.ellipse(0,0,b.s*1.35,b.s*.72,0,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
+      ctx.beginPath();ctx.ellipse(0,0,b.s*1.35,b.s*.72,0,0,Math.PI*2);ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawCreature(c){
+    ctx.save();
+    ctx.translate(c.x,c.y);
+    ctx.rotate(c.angle);
+    const scale=clamp(.78+c.energy/180,.78,1.45);
+    ctx.scale(scale,scale);
+
+    // connectors first
+    ctx.strokeStyle='rgba(255,255,255,.10)';
+    ctx.lineWidth=1;
+    for(let i=1;i<c.gene.blocks.length;i++){
+      const a=c.gene.blocks[i-1], b=c.gene.blocks[i];
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+    }
+
+    const wobble=Math.sin(c.pulse)*.04;
+    ctx.rotate(wobble);
+    for(const b of c.gene.blocks) drawBlock(b);
+
+    // faint energy halo
+    ctx.globalCompositeOperation='screen';
+    ctx.globalAlpha=.08;
+    ctx.fillStyle='white';
+    ctx.beginPath();
+    ctx.arc(0,0,14+Math.sqrt(c.gene.blocks.length)*8,0,Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function draw(){
+    ctx.fillStyle='#05070b';ctx.fillRect(0,0,W,H);
+
+    // soft water field
+    const grad=ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,'rgba(18,31,50,.28)');
+    grad.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
+
+    // faint currents
+    ctx.strokeStyle='rgba(120,170,220,.035)';
+    ctx.lineWidth=1;
+    for(let y=60;y<H;y+=70){
+      ctx.beginPath();
+      for(let x=0;x<=W;x+=28){
+        const yy=y+Math.sin(x*.012+time*.012+y*.01)*8;
+        if(x===0)ctx.moveTo(x,yy); else ctx.lineTo(x,yy);
+      }
+      ctx.stroke();
+    }
+
+    for(const f of foods){
+      ctx.globalAlpha=.65+.25*Math.sin(time*.05+f.x);
+      ctx.fillStyle='rgba(240,248,255,.9)';
+      ctx.beginPath();ctx.arc(f.x,f.y,f.r,0,Math.PI*2);ctx.fill();
+    }
+    ctx.globalAlpha=1;
+
+    for(const c of creatures) drawCreature(c);
+
+    for(const p of particles){
+      ctx.globalAlpha=p.life;
+      ctx.fillStyle=`rgb(${p.color[0]},${p.color[1]},${p.color[2]})`;
+      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  }
+
+  function update(dt){
+    time+=dt;
+    if(Math.random()<.012*dt && foods.length<160) addFood(rand(W),rand(H),1);
+    creatures.slice().forEach(c=>updateCreature(c,dt));
+
+    // death / dissolution
+    for(let i=creatures.length-1;i>=0;i--){
+      const c=creatures[i];
+      if(c.energy<=0 || c.age>22000+rand(0,12000)){
+        burst(c.x,c.y,[180,200,230],12);
+        creatures.splice(i,1);
+      }
+    }
+
+    // keep ecosystem alive
+    if(creatures.length<18){
+      for(let i=creatures.length;i<24;i++) creatures.push(makeCreature(rand(W),rand(H),makeGene(),0));
+    }
+
+    for(let i=particles.length-1;i>=0;i--){
+      const p=particles[i]; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=.98; p.vy*=.98; p.life-=.02*dt;
+      if(p.life<=0) particles.splice(i,1);
+    }
+
+    document.getElementById('pop').textContent=creatures.length;
+    document.getElementById('gen').textContent=maxGeneration;
+    document.getElementById('food').textContent=foods.length;
+    document.getElementById('mut').textContent=mutationCount;
+  }
+
+  let last=performance.now();
+  function loop(now){
+    const dt=Math.min(2.2,(now-last)/16.6667); last=now;
+    update(dt); draw(); requestAnimationFrame(loop);
+  }
+
+  function point(e){
+    const r=canvas.getBoundingClientRect();
+    return {x:(e.clientX-r.left),y:(e.clientY-r.top)};
+  }
+
+  canvas.addEventListener('pointerdown',e=>{
+    const p=point(e);
+    pointer.down=true;pointer.x=pointer.px=p.x;pointer.y=pointer.py=p.y;
+    addFood(p.x,p.y,8);
+    canvas.setPointerCapture?.(e.pointerId);
+  });
+  canvas.addEventListener('pointermove',e=>{
+    const p=point(e);
+    pointer.vx=p.x-pointer.x;pointer.vy=p.y-pointer.y;
+    pointer.px=pointer.x;pointer.py=pointer.y;pointer.x=p.x;pointer.y=p.y;
+    if(pointer.down && Math.random()<.35) addFood(p.x,p.y,1);
+  });
+  canvas.addEventListener('pointerup',()=>{pointer.down=false;pointer.vx=pointer.vy=0});
+  canvas.addEventListener('pointercancel',()=>{pointer.down=false});
+
+  document.getElementById('feedBtn').onclick=()=>addFood(W*.5,H*.5,45);
+  document.getElementById('burstBtn').onclick=()=>{
+    const picks=creatures.slice().sort(()=>Math.random()-.5).slice(0,Math.max(1,Math.floor(creatures.length*.22)));
+    for(const c of picks){ c.gene=mutateGene(c.gene,1.15); burst(c.x,c.y,choice(palette),8); }
+  };
+  document.getElementById('resetBtn').onclick=reset;
+
+  reset();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
