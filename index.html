@@ -216,7 +216,7 @@
     <div>POPULATION<b id="pop">0</b></div>
     <div>GENERATION<b id="gen">0</b></div>
     <div>FOOD<b id="food">0</b></div>
-    <div>MUTATIONS<b id="mut">0</b></div><div>MUSIC PHASE<b id="phase">0</b></div><div>PREDATORS<b id="pred">0</b></div>
+    <div>MUTATIONS<b id="mut">0</b></div><div>MUSIC PHASE<b id="phase">0</b></div><div>PREDATORS<b id="pred">0</b></div><div>WATER FLOW<b id="flowStat">CALM</b></div>
   </div>
   <div class="row">
     <button id="feedBtn">ADD FOOD</button>
@@ -227,7 +227,7 @@
     BGM：POPULATION / GENERATION / MUTATION に応じて単純→複雑へ生成<br>
     生命をクリック／タップ：捕獲して図鑑へ<br>LASSO CAPTURE：自由線で囲んだ生命群を「ひとつのコロニー標本」として捕獲<br>空いている場所をクリック／タップ：餌を投入<br>
     ドラッグ：水流を発生<br>
-    GEN 0–3：固定形・単色・不透明 / GEN 4–6：有機的な伸縮・グラデーション / GEN 7–8：移行期 / GEN 9以降：半透明オーバーレイから結晶的な秩序構造へ進化。BGMも同じ世代段階に同期します。SPEED / CURIOSITY / SOCIABILITY は図形・色・配置から自動算出されます。天敵は生命を分解・消滅させますが、高いSOCIABILITYを持つ集団は防衛コロニーとなり天敵を退治します。
+    GEN 0–3：固定形・単色・不透明 / GEN 4–6：有機的な伸縮・グラデーション / GEN 7–8：移行期 / GEN 9以降：半透明オーバーレイから結晶的な秩序構造へ進化。BGMも同じ世代段階に同期します。SPEED / CURIOSITY / SOCIABILITY は図形・色・配置から自動算出されます。天敵は生命を分解・消滅させますが、高いSOCIABILITYを持つ集団は防衛コロニーとなり天敵を退治します。さらに強い水流イベントが周期的に発生し、生命を拡散・分解します。
   </div>
 </div>
 
@@ -272,6 +272,14 @@
   let collection=[];
   const COLLECTION_KEY='evolvingAquariumCollectionV1';
   let mutationCount=0, maxGeneration=0, time=0;
+  let flowEvent={
+    active:false,
+    timer:0,
+    duration:0,
+    cooldown:rand(1500,2600),
+    angle:0,
+    strength:0
+  };
   let pointer={x:W/2,y:H/2,down:false,px:W/2,py:H/2,vx:0,vy:0};
   let lassoMode=false, lassoActive=false, lassoPoints=[];
 
@@ -983,6 +991,8 @@
 
   function nearestFood(c){
     let best=null,bd=Infinity;
+    drawWaterFlow();
+
     for(const f of foods){
       const dx=f.x-c.x,dy=f.y-c.y,d=dx*dx+dy*dy;
       if(d<bd){bd=d;best=f}
@@ -990,6 +1000,125 @@
     return best;
   }
 
+
+
+  function startWaterFlowEvent(){
+    flowEvent.active=true;
+    flowEvent.timer=0;
+    flowEvent.duration=rand(420,760);
+    flowEvent.angle=choice([
+      0,
+      Math.PI,
+      Math.PI*.18,
+      Math.PI*.82,
+      Math.PI*1.18,
+      Math.PI*1.82
+    ]);
+    flowEvent.strength=rand(.022,.038);
+    flowEvent.cooldown=rand(1700,2900);
+
+    const toast=document.getElementById('captureToast');
+    if(toast){
+      toast.textContent='STRONG WATER FLOW';
+      toast.classList.add('show');
+      setTimeout(()=>toast.classList.remove('show'),1200);
+    }
+  }
+
+  function updateWaterFlow(dt){
+    if(!flowEvent.active){
+      flowEvent.cooldown-=dt;
+      if(flowEvent.cooldown<=0) startWaterFlowEvent();
+      return;
+    }
+
+    flowEvent.timer+=dt;
+    const progress=clamp(flowEvent.timer/flowEvent.duration,0,1);
+    const envelope=Math.sin(progress*Math.PI);
+    const fx=Math.cos(flowEvent.angle)*flowEvent.strength*envelope;
+    const fy=Math.sin(flowEvent.angle)*flowEvent.strength*envelope;
+
+    // Strong flow scatters all lifeforms.
+    for(const c of creatures){
+      c.vx += fx*dt*(1.2+Math.random()*.8);
+      c.vy += fy*dt*(1.2+Math.random()*.8);
+
+      // Turbulence causes extra lateral dispersion.
+      const turbulence=(Math.random()-.5)*.012*envelope;
+      c.vx += -Math.sin(flowEvent.angle)*turbulence*dt;
+      c.vy +=  Math.cos(flowEvent.angle)*turbulence*dt;
+
+      // Morphological resistance:
+      // higher sociability and more balanced structures resist fragmentation better.
+      const social=clamp((c.gene.sociability-1)/4,0,1);
+      const curiosity=clamp((c.gene.curiosity-1)/4,0,1);
+      const resistance=.28 + social*.42 + curiosity*.12;
+
+      // Rare fragmentation pulse during strongest part of the flow.
+      if(progress>.22 && progress<.82 && Math.random()<(.00105*(1-resistance))*dt){
+        if(c.gene.blocks.length>2){
+          const idx=(Math.random()*c.gene.blocks.length)|0;
+          const removed=c.gene.blocks.splice(idx,1)[0];
+          refreshTraits(c.gene);
+          c.energy=Math.max(3,c.energy-rand(8,16));
+          burst(c.x,c.y,removed?.color||[180,190,205],14);
+        }else if(Math.random()<.22*(1-resistance)){
+          const ci=creatures.indexOf(c);
+          if(ci>=0){
+            burst(c.x,c.y,[150,160,175],20);
+            creatures.splice(ci,1);
+          }
+        }
+      }
+    }
+
+    // Food and predators are also dispersed.
+    for(const f of foods){
+      f.x += fx*dt*18;
+      f.y += fy*dt*18;
+    }
+    for(const p of predators){
+      p.vx += fx*dt*.7;
+      p.vy += fy*dt*.7;
+    }
+
+    if(flowEvent.timer>=flowEvent.duration){
+      flowEvent.active=false;
+      flowEvent.timer=0;
+    }
+  }
+
+  function drawWaterFlow(){
+    if(!flowEvent.active) return;
+    const progress=clamp(flowEvent.timer/flowEvent.duration,0,1);
+    const envelope=Math.sin(progress*Math.PI);
+    ctx.save();
+    ctx.globalAlpha=.08+.12*envelope;
+    ctx.strokeStyle='rgba(205,225,245,.65)';
+    ctx.lineWidth=1.1;
+
+    const dx=Math.cos(flowEvent.angle), dy=Math.sin(flowEvent.angle);
+    const px=-dy, py=dx;
+
+    const spacing=70;
+    const length=Math.max(W,H)*1.25;
+    const count=Math.ceil((Math.abs(px)*W+Math.abs(py)*H)/spacing)+8;
+
+    for(let i=-count;i<=count;i++){
+      const ox=W/2 + px*i*spacing - dx*length/2;
+      const oy=H/2 + py*i*spacing - dy*length/2;
+      ctx.beginPath();
+      for(let s=0;s<=14;s++){
+        const t=s/14;
+        const wave=Math.sin(t*18 + time*.055 + i)*10*envelope;
+        const x=ox+dx*length*t+px*wave;
+        const y=oy+dy*length*t+py*wave;
+        if(s===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   function makePredator(x=null,y=null){
     const edge=(Math.random()*4)|0;
@@ -1611,11 +1740,12 @@
     time+=dt;
     if(Math.random()<.012*dt && foods.length<160) addFood(rand(W),rand(H),1);
     creatures.slice().forEach(c=>updateCreature(c,dt));
+    updateWaterFlow(dt);
 
     // Predators emerge as the ecosystem matures.
     // Higher generation/population increases pressure, but total predators stay limited.
-    const predatorCap=Math.min(4,1+Math.floor(maxGeneration/18));
-    const spawnChance=(maxGeneration>=3 ? .00010 : .000025) * (1+Math.min(2,creatures.length/35));
+    const predatorCap=Math.min(7,2+Math.floor(maxGeneration/12));
+    const spawnChance=(maxGeneration>=3 ? .00024 : .00007) * (1+Math.min(2.8,creatures.length/30));
     if(predators.length<predatorCap && Math.random()<spawnChance*dt){
       predators.push(makePredator());
     }
@@ -1654,6 +1784,8 @@
     document.getElementById('mut').textContent=mutationCount;
     document.getElementById('phase').textContent=generationPhase(maxGeneration);
     document.getElementById('pred').textContent=predators.length;
+    const fs=document.getElementById('flowStat');
+    if(fs) fs.textContent=flowEvent.active?'STRONG':'CALM';
   }
 
   let last=performance.now();
@@ -1740,7 +1872,7 @@
     if(audioCtx) return;
     audioCtx = new (window.AudioContext||window.webkitAudioContext)();
     master = audioCtx.createGain();
-    master.gain.value = 0.42;
+    master.gain.value = 0.62;
     const comp = audioCtx.createDynamicsCompressor();
     comp.threshold.value=-24; comp.knee.value=18; comp.ratio.value=5; comp.attack.value=.01; comp.release.value=.25;
     master.connect(comp).connect(audioCtx.destination);
