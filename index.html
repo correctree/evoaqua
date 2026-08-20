@@ -227,7 +227,7 @@
     BGM：POPULATION / GENERATION / MUTATION に応じて単純→複雑へ生成<br>
     生命をクリック／タップ：捕獲して図鑑へ<br>LASSO CAPTURE：自由線で囲んだ生命群を「ひとつのコロニー標本」として捕獲<br>空いている場所をクリック／タップ：餌を投入<br>
     ドラッグ：水流を発生<br>
-    GEN 0–5：固定形・単色・不透明 / GEN 6–10：有機的な伸縮・グラデーション / GEN 11以降：半透明オーバーレイから結晶的な秩序構造へ進化。SPEED / CURIOSITY / SOCIABILITY は図形・色・配置から自動算出されます。天敵は生命を分解・消滅させますが、高いSOCIABILITYを持つ集団は防衛コロニーとなり天敵を退治します。
+    GEN 0–3：固定形・単色・不透明 / GEN 4–6：有機的な伸縮・グラデーション / GEN 7–8：移行期 / GEN 9以降：半透明オーバーレイから結晶的な秩序構造へ進化。BGMも同じ世代段階に同期します。SPEED / CURIOSITY / SOCIABILITY は図形・色・配置から自動算出されます。天敵は生命を分解・消滅させますが、高いSOCIABILITYを持つ集団は防衛コロニーとなり天敵を退治します。
   </div>
 </div>
 
@@ -1317,7 +1317,7 @@
     let px=b.x, py=b.y, rot=b.r||0;
     let stretchX=1, stretchY=1;
 
-    if(generation>=6){
+    if(generation>=4){
       px += Math.sin(phase*.78 + index*.91)*organic*2.2;
       py += Math.cos(phase*.71 + index*.63)*organic*2.2;
       rot += Math.sin(phase*.62 + index)*organic*.12;
@@ -1325,7 +1325,7 @@
       stretchY = 1 + Math.cos(phase*1.14 + index*.52)*(.07 + organic*.12);
     }
 
-    if(generation>=11){
+    if(generation>=9){
       const step=Math.PI/3;
       const a=Math.atan2(py,px);
       const rr=Math.hypot(px,py);
@@ -1377,7 +1377,7 @@
       const ss=s*scale;
 
       if(b.type==='circle'){
-        if(generation>=11){
+        if(generation>=9){
           const sides=6+Math.floor(crystal*6);
           ctx.beginPath();
           for(let i=0;i<sides;i++){
@@ -1390,7 +1390,7 @@
           ctx.beginPath(); ctx.arc(0,0,ss,0,Math.PI*2); ctx.fill();
         }
       }else if(b.type==='square'){
-        if(generation>=11){
+        if(generation>=9){
           ctx.beginPath();
           ctx.moveTo(0,-ss*1.1); ctx.lineTo(ss,0); ctx.lineTo(0,ss*1.1); ctx.lineTo(-ss,0);
           ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -1398,17 +1398,17 @@
           ctx.fillRect(-ss,-ss,ss*2,ss*2);
         }
       }else if(b.type==='triangle'){
-        const tip=generation>=6 ? ss*(1+Math.sin(phase*.92+index)*organic*.22) : ss;
+        const tip=generation>=4 ? ss*(1+Math.sin(phase*.92+index)*organic*.22) : ss;
         ctx.beginPath();
         ctx.moveTo(tip,0); ctx.lineTo(-ss*.75,ss*.75); ctx.lineTo(-ss*.75,-ss*.75);
         ctx.closePath(); ctx.fill();
         if(generation>=11) ctx.stroke();
       }else if(b.type==='line'){
-        const ext=generation>=6 ? 1.25+Math.sin(phase+index)*organic*.32 : 1.25;
+        const ext=generation>=4 ? 1.25+Math.sin(phase+index)*organic*.32 : 1.25;
         ctx.lineWidth=Math.max(2,ss*.34);
         ctx.beginPath(); ctx.moveTo(-ss*ext,0); ctx.lineTo(ss*ext,0); ctx.stroke();
       }else{
-        if(generation>=11){
+        if(generation>=9){
           ctx.beginPath();
           for(let i=0;i<6;i++){
             const a=Math.PI*2*i/6;
@@ -1425,7 +1425,7 @@
 
     drawBaseShape(1);
 
-    if(generation>=11){
+    if(generation>=9){
       const overlays=1+Math.floor(crystal*3);
       for(let k=1;k<=overlays;k++){
         ctx.save();
@@ -1461,14 +1461,14 @@
     ctx.translate(c.x,c.y);
 
     const gen=c.generation||0;
-    const organic=clamp((gen-5)/5,0,1);
-    const crystal=clamp((gen-10)/24,0,1);
+    const organic=clamp((gen-3)/3,0,1);
+    const crystal=clamp((gen-8)/20,0,1);
     const localPhase=c.pulse+c.phaseA*.7;
 
     let bodyRot=c.angle;
-    if(gen>=6 && gen<=10){
+    if(gen>=4 && gen<=6){
       bodyRot+=Math.sin(localPhase*.7)*organic*.16;
-    }else if(gen>=11){
+    }else if(gen>=9){
       bodyRot+=Math.sin(localPhase*.5)*(1-crystal)*.12;
     }
     ctx.rotate(bodyRot);
@@ -1476,19 +1476,19 @@
     const baseScale=clamp(.78+c.energy/180,.78,1.45);
     let sx=baseScale, sy=baseScale;
 
-    if(gen>=6 && gen<=10){
+    if(gen>=4 && gen<=6){
       const breath=1+Math.sin(localPhase*.9)*organic*.09;
       sx*=breath; sy*=(2-breath);
-    }else if(gen>=11){
+    }else if(gen>=9){
       const breath=1+Math.sin(localPhase*.75)*(1-crystal)*.06;
       sx*=breath; sy*=(2-breath);
     }
     ctx.scale(sx,sy);
 
-    if(gen<=5){
+    if(gen<=3){
       ctx.strokeStyle='rgba(255,255,255,.11)';
       ctx.lineWidth=1;
-    }else if(gen<=10){
+    }else if(gen<=6){
       ctx.strokeStyle='rgba(255,255,255,.14)';
       ctx.lineWidth=1.2;
     }else{
@@ -1501,9 +1501,9 @@
       ctx.beginPath();
       ctx.moveTo(a.x,a.y);
 
-      if(gen<=5){
+      if(gen<=3){
         ctx.lineTo(b.x,b.y);
-      }else if(gen<=10){
+      }else if(gen<=6){
         const mx=(a.x+b.x)/2+Math.sin(localPhase+i)*8*organic;
         const my=(a.y+b.y)/2+Math.cos(localPhase*.83+i)*8*organic;
         ctx.quadraticCurveTo(mx,my,b.x,b.y);
@@ -1524,14 +1524,14 @@
 
     ctx.globalCompositeOperation='screen';
     ctx.globalAlpha=gen<=5?.035:gen<=10?.055:.07+crystal*.05;
-    const haloRadius=16+Math.sqrt(c.gene.blocks.length)*(gen>=11?12:9);
+    const haloRadius=16+Math.sqrt(c.gene.blocks.length)*(gen>=9?12:9);
     const halo=ctx.createRadialGradient(0,0,2,0,0,haloRadius);
     halo.addColorStop(0,'rgba(255,255,255,.55)');
     halo.addColorStop(1,'rgba(255,255,255,0)');
     ctx.fillStyle=halo;
     ctx.beginPath(); ctx.arc(0,0,haloRadius,0,Math.PI*2); ctx.fill();
 
-    if(gen>=11 && crystal>.08){
+    if(gen>=9 && crystal>.08){
       ctx.save();
       ctx.globalAlpha=.08+crystal*.08;
       ctx.strokeStyle='rgba(210,230,255,.85)';
@@ -1781,9 +1781,15 @@
   }
 
   function generationPhase(gen){
-    // Every 8 generations enters a new musical ecology.
-    // phase keeps increasing without a fixed maximum.
-    return Math.floor(gen/8);
+    // Musical phases are synchronized with the visual evolution stages.
+    // 0: GEN 0–3 fixed / sparse
+    // 1: GEN 4–6 organic / gradient
+    // 2: GEN 7–8 transition / layering
+    // 3+: GEN 9+ crystalline evolution, continuing without a hard maximum
+    if(gen<=3) return 0;
+    if(gen<=6) return 1;
+    if(gen<=8) return 2;
+    return 3 + Math.floor((gen-9)/6);
   }
 
   function bgmPulse(){
@@ -1791,37 +1797,56 @@
     const c=getComplexity();
     const pop=creatures.length, gen=maxGeneration, mut=mutationCount;
     const phase=generationPhase(gen);
-    const localGen=gen%8;
 
-    // The global density becomes richer, while phase continuously changes the musical grammar.
-    const phaseTempo=(phase%5)*5;
-    const bpm=50 + c*62 + phaseTempo;
+    // Music follows the same evolutionary thresholds as the organism visuals.
+    const visualStage = gen<=3 ? 0 : gen<=6 ? 1 : gen<=8 ? 2 : 3;
+
+    // GEN 0–3: slow, sparse, fixed tonal material
+    // GEN 4–6: slightly faster, more legato and organic
+    // GEN 7–8: transitional layering
+    // GEN 9+: crystalline repetition, layered harmony, expanding register
+    const bpmBase=[48,62,76,88][visualStage];
+    const bpm = bpmBase + (visualStage===3 ? Math.min(42,(gen-9)*1.25) : 0) + c*18;
     const beatMs=60000/bpm;
 
-    // Cycle through different pitch ecologies every 8 generations.
     const scaleBank=[
-      [0,2,5,7,9],
-      [0,2,3,5,7,9,10],
-      [0,1,3,5,7,8,10],
-      [0,2,4,6,7,9,11],
+      [0,2,5,7,9],          // fixed pentatonic
+      [0,2,3,5,7,9,10],     // organic modal
+      [0,1,3,5,7,8,10],     // transitional
+      [0,2,4,6,7,9,11],     // crystalline
       [0,1,4,5,7,8,11],
       [0,2,3,6,7,9,10,11]
     ];
-    const scale=scaleBank[phase%scaleBank.length];
+    const scale = visualStage<3 ? scaleBank[visualStage] : scaleBank[3 + (phase%3)];
 
-    // Root migrates slowly through pitch space instead of stopping.
-    const root=38 + ((phase*3 + Math.floor(gen/3))%18);
-    const octaveSpan=1 + Math.min(4,Math.floor(c*2.5)+Math.floor(phase/4)%3);
-    const density=clamp(.20 + c*.54 + (phase%4)*.055, .2, .94);
+    const root = visualStage===0
+      ? 43
+      : 40 + ((phase*3 + Math.floor(gen/3))%16);
 
-    // Meter evolves: 4, 5, 7, 3, 6-step cycles.
-    const meters=[4,5,7,3,6];
+    const octaveSpan =
+      visualStage===0 ? 1 :
+      visualStage===1 ? 2 :
+      visualStage===2 ? 3 :
+      3 + Math.min(2,Math.floor((gen-9)/18));
+
+    const density =
+      visualStage===0 ? .24 :
+      visualStage===1 ? .42 :
+      visualStage===2 ? .58 :
+      clamp(.68 + Math.min(.22,(gen-9)*.008),.68,.90);
+
+    const meters =
+      visualStage===0 ? [4] :
+      visualStage===1 ? [4,5] :
+      visualStage===2 ? [5,7] :
+      [6,8,12,7];
+
     const meter=meters[phase%meters.length];
 
     // bass / organism pulse
     if(bgmStep%meter===0){
       const degree=scale[(Math.floor(bgmStep/meter)+gen)%scale.length];
-      const bassType=(phase%3===2)?'triangle':'sine';
+      const bassType=visualStage===0?'sine':(visualStage===1?'sine':(visualStage===2?'triangle':(phase%2?'triangle':'sine')));
       playTone(midiToFreq(root+degree), .34+c*.18, .05, bassType, 0, -.25);
     }
 
@@ -1834,8 +1859,11 @@
       // Later phases occasionally create larger evolutionary leaps.
       if(phase>=3 && Math.random()<Math.min(.32,phase*.018)) note += choice([-12,12,19,-5]);
 
-      const oscTypes=['sine','triangle','sine','square'];
-      const type=oscTypes[phase%oscTypes.length];
+      const type =
+        visualStage===0 ? 'sine' :
+        visualStage===1 ? (bgmStep%3===0?'triangle':'sine') :
+        visualStage===2 ? 'triangle' :
+        (phase%3===0?'triangle':(phase%3===1?'sine':'square'));
       playTone(midiToFreq(note), .09+c*.25, .026+c*.025, type, rand(-4-phase*.3,4+phase*.3), rand(-.75,.75));
     }
 
@@ -1855,6 +1883,31 @@
           rand(-10,10),
           rand(-1,1)
         );
+      }
+    }
+
+    // Crystalline arpeggio layer synchronized to GEN 9+ visual crystallization.
+    if(visualStage===3){
+      const crystalAmount=clamp((gen-8)/24,0,1);
+      const arpDiv = crystalAmount>.65 ? 1 : 2;
+      if(bgmStep%arpDiv===0){
+        const seq=[0,2,4,1,5,3,6,2];
+        const degree=scale[seq[bgmStep%seq.length] % scale.length];
+        const octave = 24 + (bgmStep%4===3 ? 12 : 0);
+        playTone(
+          midiToFreq(root+octave+degree),
+          .07 + crystalAmount*.08,
+          .012 + crystalAmount*.012,
+          'triangle',
+          rand(-3,3),
+          Math.sin(bgmStep*.9)*.72
+        );
+      }
+      if(crystalAmount>.42 && bgmStep%6===0){
+        const d1=scale[(bgmStep+phase)%scale.length];
+        const d2=scale[(bgmStep+phase+2)%scale.length];
+        playTone(midiToFreq(root+24+d1),.38,.010,'sine',0,-.28);
+        playTone(midiToFreq(root+31+d2),.38,.010,'sine',0,.28);
       }
     }
 
