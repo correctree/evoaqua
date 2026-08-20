@@ -86,6 +86,9 @@
     margin-top:6px;width:100%;padding:6px 8px;font-size:9px;
     border-color:rgba(255,120,120,.25);color:#ffb0b0
   }
+
+  .groupSpecimen{border-color:rgba(255,255,255,.24)}
+  .groupSpecimen .meta{color:#d7deec}
 </style>
 </head>
 <body>
@@ -106,7 +109,7 @@
   </div>
   <div class="hint">
     BGM：POPULATION / GENERATION / MUTATION に応じて単純→複雑へ生成<br>
-    生命をクリック／タップ：捕獲して図鑑へ<br>LASSO CAPTURE：自由線で囲んだ生命をまとめて捕獲<br>空いている場所をクリック／タップ：餌を投入<br>
+    生命をクリック／タップ：捕獲して図鑑へ<br>LASSO CAPTURE：自由線で囲んだ生命群を「ひとつのコロニー標本」として捕獲<br>空いている場所をクリック／タップ：餌を投入<br>
     ドラッグ：水流を発生<br>
     生物は餌を獲得し、形・色・接続を変異させ、分裂または交配します。高世代ほど動き・伸縮・色彩が複雑化します。
   </div>
@@ -264,15 +267,18 @@
 
   function finishLassoCapture(){
     if(lassoPoints.length<3){ lassoPoints=[]; lassoActive=false; return; }
+
     const captured=creatures.filter(c=>pointInPolygon(c.x,c.y,lassoPoints));
-    for(const c of captured) captureCreature(c,false);
     if(captured.length){
+      captureGroup(captured);
       const toast=document.getElementById('captureToast');
-      toast.textContent=captured.length+' SPECIMENS CAPTURED';
+      toast.textContent='GROUP OF '+captured.length+' CAPTURED';
       toast.classList.add('show');
       setTimeout(()=>toast.classList.remove('show'),1100);
     }
-    lassoPoints=[]; lassoActive=false;
+
+    lassoPoints=[];
+    lassoActive=false;
   }
 
   function saveCollection(){
@@ -328,58 +334,170 @@
     burst(c.x,c.y,[255,255,255],26);
   }
 
-  function drawSpecimenPreview(canvas,s){
-    const dpr=Math.min(devicePixelRatio||1,2);
-    const size=120;
-    canvas.width=size*dpr; canvas.height=size*dpr;
-    const g=canvas.getContext('2d');
-    g.setTransform(dpr,0,0,dpr,0,0);
-    g.fillStyle='#05070b'; g.fillRect(0,0,size,size);
-    g.save(); g.translate(size/2,size/2);
-    const blocks=s.gene.blocks||[];
-    let extent=28;
-    for(const b of blocks) extent=Math.max(extent,Math.hypot(b.x,b.y)+b.s*1.6);
-    const sc=Math.min(1.5,42/extent);
-    g.scale(sc,sc);
+
+  function captureGroup(group){
+    if(!group || !group.length) return;
+
+    const cx=group.reduce((sum,c)=>sum+c.x,0)/group.length;
+    const cy=group.reduce((sum,c)=>sum+c.y,0)/group.length;
+
+    const members=group.map(c=>({
+      dx:c.x-cx,
+      dy:c.y-cy,
+      generation:c.generation,
+      energy:Math.round(c.energy),
+      age:Math.round(c.age),
+      gene:JSON.parse(JSON.stringify(c.gene)),
+      id:c.id,
+      angle:c.angle||0
+    }));
+
+    const specimen={
+      type:'group',
+      capturedAt:new Date().toISOString(),
+      members,
+      generation:Math.max(...group.map(c=>c.generation)),
+      minGeneration:Math.min(...group.map(c=>c.generation)),
+      label:'COLONY-'+String(collection.length+1).padStart(3,'0')
+    };
+
+    collection.unshift(specimen);
+    saveCollection();
+
+    for(const c of group) burst(c.x,c.y,[255,255,255],8);
+  }
+
+  function drawGenePreview(g, gene, generation=0){
+    const blocks=gene.blocks||[];
 
     // connectors
     g.strokeStyle='rgba(255,255,255,.12)';
     g.lineWidth=1;
     for(let i=1;i<blocks.length;i++){
-      g.beginPath(); g.moveTo(blocks[i-1].x,blocks[i-1].y); g.lineTo(blocks[i].x,blocks[i].y); g.stroke();
+      g.beginPath();
+      g.moveTo(blocks[i-1].x,blocks[i-1].y);
+      g.lineTo(blocks[i].x,blocks[i].y);
+      g.stroke();
     }
 
     for(const b of blocks){
-      g.save(); g.translate(b.x,b.y); g.rotate(b.r||0);
+      g.save();
+      g.translate(b.x,b.y);
+      g.rotate(b.r||0);
+
       const [r,gg,bb]=b.color||[255,255,255];
       const alt=palette[(Math.abs(Math.floor((b.x||0)+(b.y||0)+(b.s||0))))%palette.length];
+
       let fill;
-      if((s.generation||0)>=8){
+      if(generation>=8){
         const gr=g.createLinearGradient(-b.s,-b.s,b.s,b.s);
         gr.addColorStop(0,`rgba(${r},${gg},${bb},${b.alpha??1})`);
         gr.addColorStop(1,`rgba(${alt[0]},${alt[1]},${alt[2]},${b.alpha??1})`);
         fill=gr;
-      } else fill=`rgba(${r},${gg},${bb},${b.alpha??1})`;
-      g.fillStyle=fill; g.strokeStyle=fill; g.lineWidth=1.2;
-      if(b.type==='circle'){g.beginPath();g.arc(0,0,b.s,0,Math.PI*2);g.fill();}
-      else if(b.type==='square'){g.fillRect(-b.s,-b.s,b.s*2,b.s*2);}
-      else if(b.type==='triangle'){g.beginPath();g.moveTo(b.s,0);g.lineTo(-b.s*.75,b.s*.75);g.lineTo(-b.s*.75,-b.s*.75);g.closePath();g.fill();}
-      else if(b.type==='line'){g.lineWidth=Math.max(2,b.s*.35);g.beginPath();g.moveTo(-b.s*1.25,0);g.lineTo(b.s*1.25,0);g.stroke();}
-      else{g.globalAlpha=.6;g.beginPath();g.ellipse(0,0,b.s*1.35,b.s*.72,0,0,Math.PI*2);g.fill();}
+      }else{
+        fill=`rgba(${r},${gg},${bb},${b.alpha??1})`;
+      }
+
+      g.fillStyle=fill;
+      g.strokeStyle=fill;
+      g.lineWidth=1.2;
+
+      if(b.type==='circle'){
+        g.beginPath();g.arc(0,0,b.s,0,Math.PI*2);g.fill();
+      }else if(b.type==='square'){
+        g.fillRect(-b.s,-b.s,b.s*2,b.s*2);
+      }else if(b.type==='triangle'){
+        g.beginPath();g.moveTo(b.s,0);g.lineTo(-b.s*.75,b.s*.75);g.lineTo(-b.s*.75,-b.s*.75);g.closePath();g.fill();
+      }else if(b.type==='line'){
+        g.lineWidth=Math.max(2,b.s*.35);g.beginPath();g.moveTo(-b.s*1.25,0);g.lineTo(b.s*1.25,0);g.stroke();
+      }else{
+        g.globalAlpha=.6;
+        g.beginPath();g.ellipse(0,0,b.s*1.35,b.s*.72,0,0,Math.PI*2);g.fill();
+      }
       g.restore();
     }
+  }
+
+  function drawSpecimenPreview(canvas,s){
+    const dpr=Math.min(devicePixelRatio||1,2);
+    const size=120;
+    canvas.width=size*dpr;
+    canvas.height=size*dpr;
+
+    const g=canvas.getContext('2d');
+    g.setTransform(dpr,0,0,dpr,0,0);
+    g.fillStyle='#05070b';
+    g.fillRect(0,0,size,size);
+    g.save();
+    g.translate(size/2,size/2);
+
+    if(s.type==='group' && Array.isArray(s.members)){
+      let extent=36;
+      for(const m of s.members){
+        let mr=20;
+        for(const b of (m.gene.blocks||[])){
+          mr=Math.max(mr,Math.hypot(b.x,b.y)+b.s*1.6);
+        }
+        extent=Math.max(extent,Math.hypot(m.dx,m.dy)+mr);
+      }
+      const sc=Math.min(1.3,48/extent);
+      g.scale(sc,sc);
+
+      for(const m of s.members){
+        g.save();
+        g.translate(m.dx,m.dy);
+        g.rotate(m.angle||0);
+        drawGenePreview(g,m.gene,m.generation||0);
+        g.restore();
+      }
+    }else{
+      const blocks=s.gene?.blocks||[];
+      let extent=28;
+      for(const b of blocks) extent=Math.max(extent,Math.hypot(b.x,b.y)+b.s*1.6);
+      const sc=Math.min(1.5,42/extent);
+      g.scale(sc,sc);
+      drawGenePreview(g,s.gene||{blocks:[]},s.generation||0);
+    }
+
     g.restore();
   }
 
   function showSpecimenDetail(s){
+    const detail=document.getElementById('specimenDetail');
+
+    if(s.type==='group' && Array.isArray(s.members)){
+      const totalBlocks=s.members.reduce((sum,m)=>sum+(m.gene.blocks||[]).length,0);
+      const avgSpeed=s.members.reduce((sum,m)=>sum+(m.gene.speed||0),0)/s.members.length;
+      const avgCuriosity=s.members.reduce((sum,m)=>sum+(m.gene.curiosity||0),0)/s.members.length;
+      const avgSocial=s.members.reduce((sum,m)=>sum+(m.gene.sociability||0),0)/s.members.length;
+
+      const colors=[];
+      for(const m of s.members){
+        for(const b of (m.gene.blocks||[])){
+          if(b.color) colors.push(`rgb(${b.color[0]},${b.color[1]},${b.color[2]})`);
+        }
+      }
+
+      detail.innerHTML=`
+        <b>${s.label}</b><br>
+        COLONY / ${s.members.length} LIFEFORMS<br>
+        GENERATION ${s.minGeneration ?? 0}–${s.generation ?? 0}<br>
+        TOTAL BLOCKS ${totalBlocks}<br>
+        AVG SPEED ${avgSpeed.toFixed(2)} / CURIOSITY ${avgCuriosity.toFixed(2)} / SOCIABILITY ${avgSocial.toFixed(2)}<br>
+        <div style="display:flex;gap:3px;margin-top:6px;flex-wrap:wrap">
+          ${colors.slice(0,32).map(c=>`<span style="width:11px;height:11px;border-radius:50%;background:${c};display:inline-block"></span>`).join('')}
+        </div>`;
+      return;
+    }
+
     const types={};
     for(const b of s.gene.blocks||[]) types[b.type]=(types[b.type]||0)+1;
     const typeText=Object.entries(types).map(([k,v])=>`${k} × ${v}`).join(' / ');
     const colors=(s.gene.blocks||[]).map(b=>`rgb(${b.color[0]},${b.color[1]},${b.color[2]})`);
-    const detail=document.getElementById('specimenDetail');
+
     detail.innerHTML=`
       <b>${s.label}</b><br>
-      GENERATION ${s.generation} / BLOCKS ${(s.gene.blocks||[]).length}<br>
+      INDIVIDUAL / GENERATION ${s.generation} / BLOCKS ${(s.gene.blocks||[]).length}<br>
       ${typeText}<br>
       SPEED ${s.gene.speed.toFixed(2)} / CURIOSITY ${s.gene.curiosity.toFixed(2)} / SOCIABILITY ${s.gene.sociability.toFixed(2)}<br>
       METABOLISM ${s.gene.metabolism.toFixed(2)}<br>
@@ -396,11 +514,13 @@
     grid.innerHTML='';
     collection.forEach((s,i)=>{
       const el=document.createElement('div');
-      el.className='specimen';
+      el.className='specimen'+((s.type==='group')?' groupSpecimen':'');
       const cv=document.createElement('canvas');
       const meta=document.createElement('div');
       meta.className='meta';
-      meta.innerHTML=`${s.label}<br>GEN ${s.generation} / ${s.gene.blocks.length} BLOCKS`;
+      meta.innerHTML = (s.type==='group' && Array.isArray(s.members))
+        ? `${s.label}<br>${s.members.length} LIFEFORMS / GEN ${s.minGeneration ?? 0}–${s.generation ?? 0}`
+        : `${s.label}<br>GEN ${s.generation} / ${(s.gene?.blocks||[]).length} BLOCKS`;
       const del=document.createElement('button');
       del.className='deleteSpecimen';
       del.textContent='DELETE';
