@@ -1036,11 +1036,11 @@
       refreshTraits(c.gene);
       c.energy=Math.max(4,c.energy-18);
       p.dismantled++;
-      burst(c.x,c.y,removed?.color||[255,80,100],16);
+      burst(c.x,c.y,removed?.color||[110,90,94],16);
     }else{
       const idx=creatures.indexOf(c);
       if(idx>=0){
-        burst(c.x,c.y,[255,70,90],28);
+        burst(c.x,c.y,[95,78,82],28);
         creatures.splice(idx,1);
         p.dismantled+=2;
       }
@@ -1118,12 +1118,12 @@
     const pulse=1+Math.sin(p.phase)*.12;
     ctx.scale(pulse,2-pulse);
 
-    ctx.globalCompositeOperation='screen';
+    ctx.globalCompositeOperation='source-over';
 
     // Outer fractured shell
     const grad=ctx.createRadialGradient(0,0,2,0,0,p.size*1.5);
-    grad.addColorStop(0,'rgba(255,30,70,.30)');
-    grad.addColorStop(.55,'rgba(120,0,25,.32)');
+    grad.addColorStop(0,'rgba(95,70,74,.20)');
+    grad.addColorStop(.55,'rgba(38,30,32,.28)');
     grad.addColorStop(1,'rgba(0,0,0,0)');
     ctx.fillStyle=grad;
     ctx.beginPath();
@@ -1132,8 +1132,8 @@
 
     // black core
     ctx.globalCompositeOperation='source-over';
-    ctx.fillStyle='rgba(2,2,5,.96)';
-    ctx.strokeStyle='rgba(255,55,85,.85)';
+    ctx.fillStyle='rgba(7,7,9,.98)';
+    ctx.strokeStyle='rgba(110,85,88,.62)';
     ctx.lineWidth=1.5;
     ctx.beginPath();
     const sides=7;
@@ -1146,7 +1146,7 @@
     ctx.closePath();ctx.fill();ctx.stroke();
 
     // dismantling blades
-    ctx.strokeStyle='rgba(255,70,100,.72)';
+    ctx.strokeStyle='rgba(105,82,86,.50)';
     ctx.lineWidth=1.2;
     for(let i=0;i<5;i++){
       const a=Math.PI*2*i/5+p.phase*.22;
@@ -1160,7 +1160,7 @@
     ctx.strokeStyle='rgba(255,255,255,.16)';
     ctx.lineWidth=2;
     ctx.beginPath();ctx.arc(0,0,p.size*1.65,0,Math.PI*2);ctx.stroke();
-    ctx.strokeStyle='rgba(88,244,171,.72)';
+    ctx.strokeStyle='rgba(120,132,126,.46)';
     ctx.beginPath();
     ctx.arc(0,0,p.size*1.65,-Math.PI/2,-Math.PI/2+Math.PI*2*clamp(p.hp/100,0,1));
     ctx.stroke();
@@ -1736,7 +1736,7 @@
     if(audioCtx) return;
     audioCtx = new (window.AudioContext||window.webkitAudioContext)();
     master = audioCtx.createGain();
-    master.gain.value = 0.28;
+    master.gain.value = 0.42;
     const comp = audioCtx.createDynamicsCompressor();
     comp.threshold.value=-24; comp.knee.value=18; comp.ratio.value=5; comp.attack.value=.01; comp.release.value=.25;
     master.connect(comp).connect(audioCtx.destination);
