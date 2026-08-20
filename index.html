@@ -216,7 +216,7 @@
     <div>POPULATION<b id="pop">0</b></div>
     <div>GENERATION<b id="gen">0</b></div>
     <div>FOOD<b id="food">0</b></div>
-    <div>MUTATIONS<b id="mut">0</b></div><div>MUSIC PHASE<b id="phase">0</b></div>
+    <div>MUTATIONS<b id="mut">0</b></div><div>MUSIC PHASE<b id="phase">0</b></div><div>PREDATORS<b id="pred">0</b></div>
   </div>
   <div class="row">
     <button id="feedBtn">ADD FOOD</button>
@@ -227,7 +227,7 @@
     BGM：POPULATION / GENERATION / MUTATION に応じて単純→複雑へ生成<br>
     生命をクリック／タップ：捕獲して図鑑へ<br>LASSO CAPTURE：自由線で囲んだ生命群を「ひとつのコロニー標本」として捕獲<br>空いている場所をクリック／タップ：餌を投入<br>
     ドラッグ：水流を発生<br>
-    GEN 0–5：固定形・単色・不透明 / GEN 6–10：有機的な伸縮・グラデーション / GEN 11以降：半透明オーバーレイから結晶的な秩序構造へ進化。SPEED / CURIOSITY / SOCIABILITY は図形・色・配置から自動算出されます。
+    GEN 0–5：固定形・単色・不透明 / GEN 6–10：有機的な伸縮・グラデーション / GEN 11以降：半透明オーバーレイから結晶的な秩序構造へ進化。SPEED / CURIOSITY / SOCIABILITY は図形・色・配置から自動算出されます。天敵は生命を分解・消滅させますが、高いSOCIABILITYを持つ集団は防衛コロニーとなり天敵を退治します。
   </div>
 </div>
 
@@ -268,7 +268,7 @@
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d', { alpha:false });
   let W=innerWidth, H=innerHeight, DPR=Math.min(devicePixelRatio||1,2);
-  let creatures=[], foods=[], particles=[];
+  let creatures=[], foods=[], particles=[], predators=[];
   let collection=[];
   const COLLECTION_KEY='evolvingAquariumCollectionV1';
   let mutationCount=0, maxGeneration=0, time=0;
@@ -972,7 +972,7 @@
   }
 
   function reset(){
-    creatures=[]; foods=[]; particles=[];
+    creatures=[]; foods=[]; particles=[]; predators=[];
     mutationCount=0; maxGeneration=0;
     for(let i=0;i<30;i++) creatures.push(makeCreature());
     for(let i=0;i<95;i++) addFood(rand(W),rand(H));
@@ -985,6 +985,187 @@
       if(d<bd){bd=d;best=f}
     }
     return best;
+  }
+
+
+  function makePredator(x=null,y=null){
+    const edge=(Math.random()*4)|0;
+    if(x==null || y==null){
+      if(edge===0){x=-40;y=rand(H);}
+      else if(edge===1){x=W+40;y=rand(H);}
+      else if(edge===2){x=rand(W);y=-40;}
+      else{x=rand(W);y=H+40;}
+    }
+    return {
+      x,y,
+      vx:rand(-.35,.35),vy:rand(-.35,.35),
+      angle:rand(Math.PI*2),
+      hp:100,
+      size:rand(22,32),
+      attackCooldown:0,
+      age:0,
+      phase:rand(Math.PI*2),
+      dismantled:0
+    };
+  }
+
+  function nearbyDefenders(target, radius=105){
+    const list=[];
+    for(const c of creatures){
+      const d=Math.hypot(c.x-target.x,c.y-target.y);
+      if(d<radius) list.push(c);
+    }
+    return list;
+  }
+
+  function colonyDefenseScore(target){
+    const defenders=nearbyDefenders(target,110);
+    if(defenders.length<4) return {active:false,score:0,defenders,avg:0};
+    const avg=defenders.reduce((s,c)=>s+(c.gene?.sociability||0),0)/defenders.length;
+    // High sociability + enough members creates a defensive colony.
+    const score=avg*(defenders.length/4);
+    return {active:avg>=1.05 && score>=1.15,score,defenders,avg};
+  }
+
+  function dismantleCreature(c,p){
+    if(!c || !c.gene || !c.gene.blocks) return;
+
+    if(c.gene.blocks.length>2){
+      const idx=(Math.random()*c.gene.blocks.length)|0;
+      const removed=c.gene.blocks.splice(idx,1)[0];
+      refreshTraits(c.gene);
+      c.energy=Math.max(4,c.energy-18);
+      p.dismantled++;
+      burst(c.x,c.y,removed?.color||[255,80,100],16);
+    }else{
+      const idx=creatures.indexOf(c);
+      if(idx>=0){
+        burst(c.x,c.y,[255,70,90],28);
+        creatures.splice(idx,1);
+        p.dismantled+=2;
+      }
+    }
+  }
+
+  function updatePredator(p,dt){
+    p.age+=dt;
+    p.phase+=.026*dt;
+    p.attackCooldown-=dt;
+
+    let target=null,bd=Infinity;
+    for(const c of creatures){
+      const d2=(c.x-p.x)*(c.x-p.x)+(c.y-p.y)*(c.y-p.y);
+      if(d2<bd){bd=d2;target=c;}
+    }
+
+    if(target){
+      const dx=target.x-p.x,dy=target.y-p.y,d=Math.hypot(dx,dy)||1;
+      const hunt=.0105;
+      p.vx+=dx/d*hunt*dt;
+      p.vy+=dy/d*hunt*dt;
+
+      // Colony defense activates around the threatened target.
+      const defense=colonyDefenseScore(target);
+      if(defense.active && d<145){
+        const repel=clamp(defense.score*.006,0,.025);
+        p.vx-=dx/d*repel*dt;
+        p.vy-=dy/d*repel*dt;
+        p.hp-=defense.score*.055*dt;
+
+        // Defenders turn toward and pressure the predator.
+        for(const c of defense.defenders){
+          const ax=p.x-c.x, ay=p.y-c.y, ad=Math.hypot(ax,ay)||1;
+          c.vx+=ax/ad*.0024*(c.gene.sociability||1)*dt;
+          c.vy+=ay/ad*.0024*(c.gene.sociability||1)*dt;
+          if(Math.random()<.025*dt) burst(p.x,p.y,[88,244,171],2);
+        }
+      }
+
+      if(d<p.size+18 && p.attackCooldown<=0){
+        if(!defense.active){
+          dismantleCreature(target,p);
+          p.hp=Math.min(120,p.hp+4);
+          p.size=Math.min(42,p.size+.45);
+          p.attackCooldown=70;
+        }else{
+          p.hp-=10+defense.score*5;
+          p.attackCooldown=45;
+          burst(p.x,p.y,[88,244,171],18);
+        }
+      }
+    }
+
+    // erratic predator motion
+    p.vx+=Math.cos(p.phase*1.7)*.0018*dt;
+    p.vy+=Math.sin(p.phase*1.3)*.0018*dt;
+
+    const maxV=1.55;
+    const sp=Math.hypot(p.vx,p.vy);
+    if(sp>maxV){p.vx=p.vx/sp*maxV;p.vy=p.vy/sp*maxV;}
+    p.vx*=.994;p.vy*=.994;
+    p.x+=p.vx*dt;p.y+=p.vy*dt;
+    p.angle=Math.atan2(p.vy,p.vx);
+
+    // predators can leave, but are more likely to persist if they have dismantled life
+    const margin=160;
+    if(p.x<-margin||p.x>W+margin||p.y<-margin||p.y>H+margin) p.hp-=.5*dt;
+  }
+
+  function drawPredator(p){
+    ctx.save();
+    ctx.translate(p.x,p.y);
+    ctx.rotate(p.angle);
+    const pulse=1+Math.sin(p.phase)*.12;
+    ctx.scale(pulse,2-pulse);
+
+    ctx.globalCompositeOperation='screen';
+
+    // Outer fractured shell
+    const grad=ctx.createRadialGradient(0,0,2,0,0,p.size*1.5);
+    grad.addColorStop(0,'rgba(255,30,70,.30)');
+    grad.addColorStop(.55,'rgba(120,0,25,.32)');
+    grad.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=grad;
+    ctx.beginPath();
+    ctx.arc(0,0,p.size*1.5,0,Math.PI*2);
+    ctx.fill();
+
+    // black core
+    ctx.globalCompositeOperation='source-over';
+    ctx.fillStyle='rgba(2,2,5,.96)';
+    ctx.strokeStyle='rgba(255,55,85,.85)';
+    ctx.lineWidth=1.5;
+    ctx.beginPath();
+    const sides=7;
+    for(let i=0;i<sides;i++){
+      const a=Math.PI*2*i/sides;
+      const rr=p.size*(i%2?0.72:1);
+      const x=Math.cos(a)*rr,y=Math.sin(a)*rr;
+      if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+    }
+    ctx.closePath();ctx.fill();ctx.stroke();
+
+    // dismantling blades
+    ctx.strokeStyle='rgba(255,70,100,.72)';
+    ctx.lineWidth=1.2;
+    for(let i=0;i<5;i++){
+      const a=Math.PI*2*i/5+p.phase*.22;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a)*p.size*.55,Math.sin(a)*p.size*.55);
+      ctx.lineTo(Math.cos(a)*p.size*1.35,Math.sin(a)*p.size*1.35);
+      ctx.stroke();
+    }
+
+    // HP ring
+    ctx.strokeStyle='rgba(255,255,255,.16)';
+    ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(0,0,p.size*1.65,0,Math.PI*2);ctx.stroke();
+    ctx.strokeStyle='rgba(88,244,171,.72)';
+    ctx.beginPath();
+    ctx.arc(0,0,p.size*1.65,-Math.PI/2,-Math.PI/2+Math.PI*2*clamp(p.hp/100,0,1));
+    ctx.stroke();
+
+    ctx.restore();
   }
 
   function updateCreature(c,dt){
@@ -1092,9 +1273,13 @@
 
     // reproduction
     if(c.energy>112 && c.cooldown<=0 && creatures.length<70){
-      if(Math.random()<.0012*dt){
+      // Early generations reproduce/merge less frequently.
+      // GEN 0-5: 35% of the normal reproduction rate.
+      const reproductionRate = c.generation<=5 ? .0012*0.35 : .0012;
+      if(Math.random()<reproductionRate*dt){
         const candidates=creatures.filter(o=>o!==c && o.energy>80 && Math.hypot(o.x-c.x,o.y-c.y)<90 && o.cooldown<=0);
-        if(candidates.length && Math.random()<.58){
+        const crossoverChance = c.generation<=5 ? .28 : .58;
+        if(candidates.length && Math.random()<crossoverChance){
           const o=choice(candidates);
           const g=crossGenes(c.gene,o.gene);
           const gen=Math.max(c.generation,o.generation)+1;
@@ -1394,6 +1579,7 @@
     ctx.globalAlpha=1;
 
     for(const c of creatures) drawCreature(c);
+    for(const predator of predators) drawPredator(predator);
 
     for(const p of particles){
       ctx.globalAlpha=p.life;
@@ -1422,6 +1608,23 @@
     if(Math.random()<.012*dt && foods.length<160) addFood(rand(W),rand(H),1);
     creatures.slice().forEach(c=>updateCreature(c,dt));
 
+    // Predators emerge as the ecosystem matures.
+    // Higher generation/population increases pressure, but total predators stay limited.
+    const predatorCap=Math.min(4,1+Math.floor(maxGeneration/18));
+    const spawnChance=(maxGeneration>=3 ? .00010 : .000025) * (1+Math.min(2,creatures.length/35));
+    if(predators.length<predatorCap && Math.random()<spawnChance*dt){
+      predators.push(makePredator());
+    }
+
+    predators.slice().forEach(p=>updatePredator(p,dt));
+    for(let i=predators.length-1;i>=0;i--){
+      const p=predators[i];
+      if(p.hp<=0 || p.age>26000){
+        burst(p.x,p.y,[88,244,171],30);
+        predators.splice(i,1);
+      }
+    }
+
     // death / dissolution
     for(let i=creatures.length-1;i>=0;i--){
       const c=creatures[i];
@@ -1446,6 +1649,7 @@
     document.getElementById('food').textContent=foods.length;
     document.getElementById('mut').textContent=mutationCount;
     document.getElementById('phase').textContent=generationPhase(maxGeneration);
+    document.getElementById('pred').textContent=predators.length;
   }
 
   let last=performance.now();
@@ -1532,7 +1736,7 @@
     if(audioCtx) return;
     audioCtx = new (window.AudioContext||window.webkitAudioContext)();
     master = audioCtx.createGain();
-    master.gain.value = 0.16;
+    master.gain.value = 0.28;
     const comp = audioCtx.createDynamicsCompressor();
     comp.threshold.value=-24; comp.knee.value=18; comp.ratio.value=5; comp.attack.value=.01; comp.release.value=.25;
     master.connect(comp).connect(audioCtx.destination);
