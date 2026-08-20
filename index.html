@@ -1067,6 +1067,19 @@ window.addEventListener('error',(e)=>{
       c.vy += (Math.random()-.5)*.040*envelope*dt;
       c.angle += (Math.random()-.5)*.16*envelope*dt;
 
+      // Morphological resistance.
+      const social=clamp((c.gene.sociability-1)/4,0,1);
+      const curiosity=clamp((c.gene.curiosity-1)/4,0,1);
+      const resistance=.18 + social*.22 + curiosity*.08;
+
+      // Colony density must be calculated BEFORE it is used.
+      let nearbyCount=0;
+      for(const o of creatures){
+        if(o===c) continue;
+        if(Math.hypot(o.x-c.x,o.y-c.y)<95) nearbyCount++;
+      }
+      const colonyShear=clamp(nearbyCount/6,0,1.8);
+
       // Clustered lifeforms are torn apart by differential flow.
       if(nearbyCount>=3 && progress>.20 && progress<.85 && Math.random()<.020*dt){
         const tear=rand(.35,.95)*(1+colonyShear*.45)*envelope;
@@ -1082,24 +1095,9 @@ window.addEventListener('error',(e)=>{
         c.vy += (Math.random()-.5)*impulse;
       }
 
-      // Morphological resistance:
-      // higher sociability and more balanced structures resist fragmentation better.
-      const social=clamp((c.gene.sociability-1)/4,0,1);
-      const curiosity=clamp((c.gene.curiosity-1)/4,0,1);
-      // Strong flow weakens colony cohesion: sociability helps only partially.
-      const resistance=.18 + social*.22 + curiosity*.08;
-
-      // Colonies are especially vulnerable to strong shear:
-      // the more neighbors nearby, the higher the breakup probability.
-      let nearbyCount=0;
-      for(const o of creatures){
-        if(o===c) continue;
-        if(Math.hypot(o.x-c.x,o.y-c.y)<95) nearbyCount++;
-      }
-      const colonyShear=clamp(nearbyCount/6,0,1.8);
-
-      // Peak turbulence can shear off extra blocks even from larger organisms.
-      if(progress>.24 && progress<.80 && c.gene.blocks.length>3 && Math.random()<(.0048*(1-resistance*.36)*(1+colonyShear*.9))*dt){
+      // Peak turbulence can shear off extra blocks.
+      if(progress>.24 && progress<.80 && c.gene.blocks.length>3 &&
+         Math.random()<(.0048*(1-resistance*.36)*(1+colonyShear*.9))*dt){
         const extraIdx=(Math.random()*c.gene.blocks.length)|0;
         const extra=c.gene.blocks.splice(extraIdx,1)[0];
         refreshTraits(c.gene);
@@ -1108,8 +1106,9 @@ window.addEventListener('error',(e)=>{
       }
 
       // Peak flow can shear off several elements in succession.
-      if(progress>.34 && progress<.72 && c.gene.blocks.length>4 && Math.random()<(.0042*(1-resistance*.30)*(1+colonyShear*1.15))*dt){
-        const shearCount=Math.min(c.gene.blocks.length-2, 1+((Math.random()*3)|0));
+      if(progress>.34 && progress<.72 && c.gene.blocks.length>4 &&
+         Math.random()<(.0042*(1-resistance*.30)*(1+colonyShear*1.15))*dt){
+        const shearCount=Math.min(c.gene.blocks.length-2,1+((Math.random()*3)|0));
         for(let si=0;si<shearCount;si++){
           if(c.gene.blocks.length<=2) break;
           const ridx=(Math.random()*c.gene.blocks.length)|0;
@@ -1125,8 +1124,9 @@ window.addEventListener('error',(e)=>{
         c.energy=Math.max(2,c.energy-rand(12,24));
       }
 
-      // Main fragmentation pulse during strongest part of the flow.
-      if(progress>.10 && progress<.92 && Math.random()<(.0068*(1-resistance*.42)*(1+colonyShear*.75))*dt){
+      // Main fragmentation pulse.
+      if(progress>.10 && progress<.92 &&
+         Math.random()<(.0068*(1-resistance*.42)*(1+colonyShear*.75))*dt){
         if(c.gene.blocks.length>2){
           const idx=(Math.random()*c.gene.blocks.length)|0;
           const removed=c.gene.blocks.splice(idx,1)[0];
