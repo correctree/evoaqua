@@ -62,9 +62,10 @@
   <div class="row">
     <button id="feedBtn">ADD FOOD</button>
     <button id="burstBtn">MUTATE</button>
-    <button id="resetBtn">RESET</button>
+    <button id="resetBtn">RESET</button><button id="soundBtn">START BGM</button>
   </div>
   <div class="hint">
+    BGM：POPULATION / GENERATION / MUTATION に応じて単純→複雑へ生成<br>
     クリック／タップ：餌を投入<br>
     ドラッグ：水流を発生<br>
     生物は餌を獲得し、形・色・接続を変異させ、分裂または交配します。
@@ -447,6 +448,137 @@
     for(const c of picks){ c.gene=mutateGene(c.gene,1.15); burst(c.x,c.y,choice(palette),8); }
   };
   document.getElementById('resetBtn').onclick=reset;
+
+
+  // ---- Generative BGM: evolution state -> musical complexity ----
+  let audioCtx=null, master=null, bgmTimer=null, bgmStep=0, bgmEnabled=false;
+  let lastPop=0,lastGen=0,lastMut=0;
+
+  const scales = [
+    [0,2,5,7,9],          // pentatonic / simple
+    [0,2,3,5,7,9,10],     // modal
+    [0,2,3,5,7,8,10,11]   // denser chromatic/modal mix
+  ];
+
+  function midiToFreq(m){ return 440*Math.pow(2,(m-69)/12); }
+
+  function ensureAudio(){
+    if(audioCtx) return;
+    audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    master = audioCtx.createGain();
+    master.gain.value = 0.16;
+    const comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value=-24; comp.knee.value=18; comp.ratio.value=5; comp.attack.value=.01; comp.release.value=.25;
+    master.connect(comp).connect(audioCtx.destination);
+  }
+
+  function playTone(freq, dur=.18, amp=.05, type='sine', detune=0, pan=0){
+    if(!audioCtx || !bgmEnabled) return;
+    const now=audioCtx.currentTime;
+    const o=audioCtx.createOscillator();
+    const g=audioCtx.createGain();
+    const p=audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
+    o.type=type; o.frequency.value=freq; o.detune.value=detune;
+    g.gain.setValueAtTime(.0001,now);
+    g.gain.exponentialRampToValueAtTime(Math.max(.0002,amp),now+.012);
+    g.gain.exponentialRampToValueAtTime(.0001,now+dur);
+    o.connect(g);
+    if(p){ p.pan.value=clamp(pan,-1,1); g.connect(p).connect(master); }
+    else g.connect(master);
+    o.start(now); o.stop(now+dur+.04);
+  }
+
+  function noiseTick(amp=.02,dur=.04){
+    if(!audioCtx || !bgmEnabled) return;
+    const len=Math.floor(audioCtx.sampleRate*dur);
+    const buf=audioCtx.createBuffer(1,len,audioCtx.sampleRate);
+    const data=buf.getChannelData(0);
+    for(let i=0;i<len;i++) data[i]=(Math.random()*2-1)*(1-i/len);
+    const src=audioCtx.createBufferSource(); src.buffer=buf;
+    const g=audioCtx.createGain(); g.gain.value=amp;
+    const hp=audioCtx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=1200;
+    src.connect(hp).connect(g).connect(master);
+    src.start();
+  }
+
+  function getComplexity(){
+    const popN=clamp((creatures.length-18)/52,0,1);
+    const genN=clamp(maxGeneration/14,0,1);
+    const mutN=clamp(mutationCount/90,0,1);
+    return clamp(popN*.28 + genN*.42 + mutN*.30,0,1);
+  }
+
+  function bgmPulse(){
+    if(!bgmEnabled || !audioCtx) return;
+    const c=getComplexity();
+    const pop=creatures.length, gen=maxGeneration, mut=mutationCount;
+
+    // evolution increases tempo, note density, harmonic layers and range
+    const bpm=54 + c*72;
+    const beatMs=60000/bpm;
+    const scale = c<.33 ? scales[0] : c<.68 ? scales[1] : scales[2];
+    const root = 43 + (gen%5);
+    const octaveSpan = 1 + Math.floor(c*2.8);
+    const density = .24 + c*.68;
+
+    // bass / organism pulse
+    if(bgmStep%4===0){
+      const degree=scale[(bgmStep/4 + gen)%scale.length|0];
+      playTone(midiToFreq(root+degree), .42+c*.12, .055, c>.7?'triangle':'sine', 0, -.2);
+    }
+
+    // primary melodic cells: mutation shifts pitch selection
+    if(Math.random()<density){
+      const degree=scale[(bgmStep + mut + Math.floor(Math.random()*scale.length))%scale.length];
+      const oct=Math.floor(Math.random()*(octaveSpan+1))*12;
+      const note=root+12+degree+oct;
+      playTone(midiToFreq(note), .11+c*.22, .032+c*.025, c>.55?'triangle':'sine', rand(-5,5), rand(-.65,.65));
+    }
+
+    // population adds parallel voices
+    const voices = 1 + Math.floor(clamp((pop-25)/13,0,3));
+    for(let v=1;v<voices;v++){
+      if(Math.random()<c*.45){
+        const degree=choice(scale);
+        const interval = [7,12,14,17][(v+gen)%4];
+        playTone(midiToFreq(root+12+degree+interval), .08+c*.16, .014, v%2?'square':'triangle', rand(-8,8), rand(-1,1));
+      }
+    }
+
+    // mutations add percussive irregularity
+    if(c>.22 && (bgmStep%2===0 || Math.random()<c*.45)) noiseTick(.006+c*.012,.025);
+    if(c>.58 && Math.random()<.22+c*.28) noiseTick(.008+c*.012,.06);
+
+    // generation adds sustained upper harmonic "ecosystem"
+    if(c>.42 && bgmStep%8===0){
+      const degree=scale[(gen+bgmStep)%scale.length];
+      playTone(midiToFreq(root+24+degree), .8+c*.75, .012+c*.014, 'sine', rand(-12,12), .25);
+    }
+
+    // audible signal when state has meaningfully changed
+    if(gen>lastGen){
+      playTone(midiToFreq(root+36+scale[gen%scale.length]), .7, .04, 'sine', 0, 0);
+    }
+    if(mut-lastMut>=5 && c>.25){
+      playTone(midiToFreq(root+24+choice(scale)), .22, .025, 'triangle', rand(-15,15), rand(-.5,.5));
+    }
+    lastPop=pop; lastGen=gen; lastMut=mut;
+    bgmStep++;
+
+    clearTimeout(bgmTimer);
+    bgmTimer=setTimeout(bgmPulse, Math.max(110,beatMs/2));
+  }
+
+  async function toggleBGM(){
+    ensureAudio();
+    if(audioCtx.state==='suspended') await audioCtx.resume();
+    bgmEnabled=!bgmEnabled;
+    document.getElementById('soundBtn').textContent=bgmEnabled?'STOP BGM':'START BGM';
+    if(bgmEnabled){ bgmStep=0; bgmPulse(); }
+    else if(bgmTimer){ clearTimeout(bgmTimer); bgmTimer=null; }
+  }
+
+  document.getElementById('soundBtn').onclick=toggleBGM;
 
   reset();
   requestAnimationFrame(loop);
