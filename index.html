@@ -89,6 +89,122 @@
 
   .groupSpecimen{border-color:rgba(255,255,255,.24)}
   .groupSpecimen .meta{color:#d7deec}
+
+  /* COLLECTION UI v2 */
+  #collectionPanel{
+    width:min(760px,calc(100vw - 36px));
+    max-height:82vh;
+  }
+  #collectionGrid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(132px,1fr));
+    gap:10px;
+  }
+  .specimen{
+    aspect-ratio:1/1;
+    position:relative;
+    padding:0;
+    overflow:hidden;
+    min-height:0;
+    border-radius:12px;
+  }
+  .specimen canvas{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    aspect-ratio:1/1;
+    border-radius:0;
+  }
+  .specimen .meta{
+    position:absolute;
+    left:0;right:0;bottom:0;
+    padding:22px 8px 7px;
+    margin:0;
+    background:linear-gradient(transparent,rgba(4,7,12,.92));
+    color:#e8edf7;
+    pointer-events:none;
+  }
+  .specimen .deleteSpecimen{
+    position:absolute;
+    top:6px;
+    right:6px;
+    z-index:3;
+    width:auto;
+    margin:0;
+    padding:4px 7px;
+    border-radius:999px;
+    background:rgba(5,7,11,.78);
+  }
+
+  #specimenModal{
+    position:fixed;
+    inset:0;
+    z-index:50;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    background:rgba(0,0,0,.72);
+    backdrop-filter:blur(12px);
+    -webkit-backdrop-filter:blur(12px);
+  }
+  #specimenModal.open{display:flex}
+  #specimenModalCard{
+    width:min(920px,96vw);
+    max-height:92vh;
+    overflow:auto;
+    border:1px solid rgba(255,255,255,.15);
+    border-radius:18px;
+    background:rgba(7,11,18,.96);
+    box-shadow:0 30px 90px rgba(0,0,0,.45);
+    padding:16px;
+  }
+  #specimenModalHead{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    margin-bottom:12px;
+  }
+  #specimenModalTitle{
+    font-size:15px;
+    letter-spacing:.12em;
+    margin:0;
+  }
+  #specimenModalBody{
+    display:grid;
+    grid-template-columns:minmax(280px,1.25fr) minmax(260px,.75fr);
+    gap:16px;
+  }
+  #largeSpecimenPreview{
+    width:100%;
+    aspect-ratio:1/1;
+    background:#05070b;
+    border:1px solid var(--line);
+    border-radius:14px;
+  }
+  #radarCanvas{
+    width:100%;
+    aspect-ratio:1/1;
+    background:rgba(255,255,255,.02);
+    border:1px solid var(--line);
+    border-radius:14px;
+  }
+  #modalStats{
+    margin-top:10px;
+    font-size:11px;
+    color:var(--muted);
+    line-height:1.65;
+  }
+  #modalStats b{color:var(--fg)}
+  @media (max-width:760px){
+    #collectionPanel{width:calc(100vw - 20px);right:10px}
+    #collectionGrid{grid-template-columns:repeat(2,1fr)}
+    #specimenModal{padding:10px}
+    #specimenModalBody{grid-template-columns:1fr}
+  }
+
 </style>
 </head>
 <body>
@@ -126,9 +242,26 @@
     <button id="closeCollection">CLOSE</button>
   </div>
   <div id="collectionGrid"></div>
-  <div id="specimenDetail">捕獲した生命を選択すると詳細が表示されます。</div>
+  <div id="specimenDetail">サムネールをクリックすると拡大表示します。</div>
 </div>
 <div id="captureToast">CAPTURED</div>
+
+<div id="specimenModal" aria-hidden="true">
+  <div id="specimenModalCard">
+    <div id="specimenModalHead">
+      <h3 id="specimenModalTitle">SPECIMEN</h3>
+      <button id="closeSpecimenModal">CLOSE</button>
+    </div>
+    <div id="specimenModalBody">
+      <canvas id="largeSpecimenPreview"></canvas>
+      <div>
+        <canvas id="radarCanvas"></canvas>
+        <div id="modalStats"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <script>
 (() => {
@@ -462,6 +595,197 @@
     g.restore();
   }
 
+
+  function drawLargeSpecimenPreview(s){
+    const canvas=document.getElementById('largeSpecimenPreview');
+    if(!canvas) return;
+
+    const cssSize=Math.max(360,Math.min(620,window.innerWidth*.48));
+    const dpr=Math.min(devicePixelRatio||1,2);
+    canvas.width=cssSize*dpr;
+    canvas.height=cssSize*dpr;
+
+    const g=canvas.getContext('2d');
+    g.setTransform(dpr,0,0,dpr,0,0);
+    g.fillStyle='#05070b';
+    g.fillRect(0,0,cssSize,cssSize);
+    g.save();
+    g.translate(cssSize/2,cssSize/2);
+
+    if(s.type==='group' && Array.isArray(s.members)){
+      let extent=40;
+      for(const m of s.members){
+        let mr=20;
+        for(const b of (m.gene.blocks||[])){
+          mr=Math.max(mr,Math.hypot(b.x,b.y)+b.s*1.7);
+        }
+        extent=Math.max(extent,Math.hypot(m.dx,m.dy)+mr);
+      }
+      const sc=Math.min(3.6,(cssSize*.40)/extent);
+      g.scale(sc,sc);
+      for(const m of s.members){
+        g.save();
+        g.translate(m.dx,m.dy);
+        g.rotate(m.angle||0);
+        drawGenePreview(g,m.gene,m.generation||0);
+        g.restore();
+      }
+    }else{
+      const blocks=s.gene?.blocks||[];
+      let extent=28;
+      for(const b of blocks){
+        extent=Math.max(extent,Math.hypot(b.x,b.y)+b.s*1.7);
+      }
+      const sc=Math.min(4.0,(cssSize*.38)/extent);
+      g.scale(sc,sc);
+      drawGenePreview(g,s.gene||{blocks:[]},s.generation||0);
+    }
+    g.restore();
+  }
+
+  function getSpecimenTraits(s){
+    if(s.type==='group' && Array.isArray(s.members) && s.members.length){
+      const avg=(key)=>s.members.reduce((sum,m)=>sum+(Number(m.gene?.[key])||0),0)/s.members.length;
+      return {
+        speed:avg('speed'),
+        curiosity:avg('curiosity'),
+        sociability:avg('sociability')
+      };
+    }
+    return {
+      speed:Number(s.gene?.speed)||0,
+      curiosity:Number(s.gene?.curiosity)||0,
+      sociability:Number(s.gene?.sociability)||0
+    };
+  }
+
+  function drawRadarChart(s){
+    const canvas=document.getElementById('radarCanvas');
+    if(!canvas) return;
+    const size=320;
+    const dpr=Math.min(devicePixelRatio||1,2);
+    canvas.width=size*dpr;
+    canvas.height=size*dpr;
+
+    const g=canvas.getContext('2d');
+    g.setTransform(dpr,0,0,dpr,0,0);
+    g.clearRect(0,0,size,size);
+
+    const traits=getSpecimenTraits(s);
+    const values=[
+      clamp(traits.speed/2,0,1),
+      clamp(traits.curiosity/2,0,1),
+      clamp(traits.sociability/2,0,1)
+    ];
+    const labels=['SPEED','CURIOSITY','SOCIABILITY'];
+    const raw=[traits.speed,traits.curiosity,traits.sociability];
+
+    const cx=size/2, cy=size/2+8, R=105;
+    const angles=[-Math.PI/2, Math.PI/2+Math.PI/3, Math.PI/2-Math.PI/3];
+
+    g.lineWidth=1;
+    for(let ring=1;ring<=4;ring++){
+      const rr=R*(ring/4);
+      g.beginPath();
+      angles.forEach((a,i)=>{
+        const x=cx+Math.cos(a)*rr, y=cy+Math.sin(a)*rr;
+        if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
+      });
+      g.closePath();
+      g.strokeStyle='rgba(255,255,255,.10)';
+      g.stroke();
+    }
+
+    angles.forEach(a=>{
+      g.beginPath();
+      g.moveTo(cx,cy);
+      g.lineTo(cx+Math.cos(a)*R,cy+Math.sin(a)*R);
+      g.strokeStyle='rgba(255,255,255,.09)';
+      g.stroke();
+    });
+
+    g.beginPath();
+    values.forEach((v,i)=>{
+      const a=angles[i], rr=R*v;
+      const x=cx+Math.cos(a)*rr, y=cy+Math.sin(a)*rr;
+      if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
+    });
+    g.closePath();
+    g.fillStyle='rgba(167,93,255,.28)';
+    g.strokeStyle='rgba(190,120,255,.95)';
+    g.lineWidth=2;
+    g.fill();
+    g.stroke();
+
+    values.forEach((v,i)=>{
+      const a=angles[i], rr=R*v;
+      const x=cx+Math.cos(a)*rr, y=cy+Math.sin(a)*rr;
+      g.beginPath();
+      g.arc(x,y,3.5,0,Math.PI*2);
+      g.fillStyle='rgba(235,220,255,1)';
+      g.fill();
+    });
+
+    g.textAlign='center';
+    g.fillStyle='rgba(235,240,250,.92)';
+    g.font='11px Inter, system-ui, sans-serif';
+    labels.forEach((label,i)=>{
+      const a=angles[i];
+      const rr=R+30;
+      const x=cx+Math.cos(a)*rr;
+      const y=cy+Math.sin(a)*rr;
+      g.fillText(label,x,y);
+      g.fillStyle='rgba(160,170,190,.95)';
+      g.font='10px Inter, system-ui, sans-serif';
+      g.fillText(raw[i].toFixed(2),x,y+14);
+      g.fillStyle='rgba(235,240,250,.92)';
+      g.font='11px Inter, system-ui, sans-serif';
+    });
+  }
+
+  function openSpecimenModal(s){
+    document.getElementById('specimenModalTitle').textContent=s.label || 'SPECIMEN';
+    drawLargeSpecimenPreview(s);
+    drawRadarChart(s);
+
+    const t=getSpecimenTraits(s);
+    const stats=document.getElementById('modalStats');
+
+    if(s.type==='group' && Array.isArray(s.members)){
+      const totalBlocks=s.members.reduce((sum,m)=>sum+(m.gene?.blocks||[]).length,0);
+      stats.innerHTML=`
+        <b>COLONY</b><br>
+        LIFEFORMS ${s.members.length}<br>
+        GENERATION ${s.minGeneration ?? 0}–${s.generation ?? 0}<br>
+        TOTAL BLOCKS ${totalBlocks}<br><br>
+        <b>AVERAGE TRAITS</b><br>
+        SPEED ${t.speed.toFixed(2)}<br>
+        CURIOSITY ${t.curiosity.toFixed(2)}<br>
+        SOCIABILITY ${t.sociability.toFixed(2)}
+      `;
+    }else{
+      stats.innerHTML=`
+        <b>INDIVIDUAL</b><br>
+        GENERATION ${s.generation ?? 0}<br>
+        BLOCKS ${(s.gene?.blocks||[]).length}<br><br>
+        <b>TRAITS</b><br>
+        SPEED ${t.speed.toFixed(2)}<br>
+        CURIOSITY ${t.curiosity.toFixed(2)}<br>
+        SOCIABILITY ${t.sociability.toFixed(2)}
+      `;
+    }
+
+    const modal=document.getElementById('specimenModal');
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden','false');
+  }
+
+  function closeSpecimenModal(){
+    const modal=document.getElementById('specimenModal');
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden','true');
+  }
+
   function showSpecimenDetail(s){
     const detail=document.getElementById('specimenDetail');
 
@@ -528,10 +852,10 @@
         ev.stopPropagation();
         collection.splice(i,1);
         saveCollection();
-        document.getElementById('specimenDetail').textContent='捕獲した生命を選択すると詳細が表示されます。';
+        document.getElementById('specimenDetail').textContent='サムネールをクリックすると拡大表示します。';
       };
       el.appendChild(cv); el.appendChild(meta); el.appendChild(del);
-      el.onclick=()=>showSpecimenDetail(s);
+      el.onclick=()=>{ showSpecimenDetail(s); openSpecimenModal(s); };
       grid.appendChild(el);
       drawSpecimenPreview(cv,s);
     });
@@ -1142,6 +1466,15 @@
     document.getElementById('collectionPanel').classList.toggle('open');
     updateCollectionUI();
   };
+
+  document.getElementById('closeSpecimenModal').onclick=closeSpecimenModal;
+  document.getElementById('specimenModal').addEventListener('pointerdown',(e)=>{
+    if(e.target.id==='specimenModal') closeSpecimenModal();
+  });
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Escape') closeSpecimenModal();
+  });
+
   document.getElementById('closeCollection').onclick=()=>{
     document.getElementById('collectionPanel').classList.remove('open');
   };
