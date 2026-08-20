@@ -298,9 +298,9 @@
       blocks: [],
       hueShift: rand(-18,18),
       metabolism: rand(.8,1.25),
-      curiosity: 1,
-      sociability: 1,
-      speed: 1
+      curiosity: 3,
+      sociability: 3,
+      speed: 3
     };
     if(!base){
       const n=3+((Math.random()*4)|0);
@@ -352,7 +352,7 @@
 
   function calculateTraits(gene){
     const blocks=gene?.blocks||[];
-    if(!blocks.length) return {speed:1,curiosity:1,sociability:1};
+    if(!blocks.length) return {speed:3,curiosity:3,sociability:3};
 
     let speed=0.35, curiosity=0.35, sociability=0.35;
     let radial=0, asymX=0, asymY=0, maxR=1;
@@ -407,7 +407,10 @@
     speed -= clamp((n-7)/10,0,1)*0.10;
 
     // normalize to the same conceptual range used by radar chart: roughly 0.2–2.0
-    const normalize=v=>clamp(v,0.2,2.0);
+    const normalize=v=>{
+      const bounded=clamp(v,0.2,2.0);
+      return 1 + ((bounded-0.2)/(2.0-0.2))*4;
+    };
 
     return {
       speed:normalize(speed),
@@ -783,9 +786,9 @@
 
     const traits=getSpecimenTraits(s);
     const values=[
-      clamp(traits.speed/2,0,1),
-      clamp(traits.curiosity/2,0,1),
-      clamp(traits.sociability/2,0,1)
+      clamp((traits.speed-1)/4,0,1),
+      clamp((traits.curiosity-1)/4,0,1),
+      clamp((traits.sociability-1)/4,0,1)
     ];
     const labels=['SPEED','CURIOSITY','SOCIABILITY'];
     const raw=[traits.speed,traits.curiosity,traits.sociability];
@@ -1024,7 +1027,7 @@
     const avg=defenders.reduce((s,c)=>s+(c.gene?.sociability||0),0)/defenders.length;
     // High sociability + enough members creates a defensive colony.
     const score=avg*(defenders.length/4);
-    return {active:avg>=1.05 && score>=1.15,score,defenders,avg};
+    return {active:avg>=2.9 && score>=3.2,score,defenders,avg};
   }
 
   function dismantleCreature(c,p){
@@ -1075,8 +1078,8 @@
         // Defenders turn toward and pressure the predator.
         for(const c of defense.defenders){
           const ax=p.x-c.x, ay=p.y-c.y, ad=Math.hypot(ax,ay)||1;
-          c.vx+=ax/ad*.0024*(c.gene.sociability||1)*dt;
-          c.vy+=ay/ad*.0024*(c.gene.sociability||1)*dt;
+          c.vx+=ax/ad*.0024*(.4+((c.gene.sociability-1)/4)*1.6)*dt;
+          c.vy+=ay/ad*.0024*(.4+((c.gene.sociability-1)/4)*1.6)*dt;
           if(Math.random()<.025*dt) burst(p.x,p.y,[88,244,171],2);
         }
       }
@@ -1260,7 +1263,8 @@
       }
     }
 
-    const maxV=(1.25 + evo*.85)*c.gene.speed;
+    const speedFactor=.55 + ((c.gene.speed-1)/4)*1.45;
+    const maxV=(1.25 + evo*.85)*speedFactor;
     const sp=Math.hypot(c.vx,c.vy);
     if(sp>maxV){c.vx=c.vx/sp*maxV;c.vy=c.vy/sp*maxV}
     c.vx*=.996; c.vy*=.996;
