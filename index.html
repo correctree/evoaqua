@@ -1018,7 +1018,7 @@ window.addEventListener('error',(e)=>{
   function startWaterFlowEvent(){
     flowEvent.active=true;
     flowEvent.timer=0;
-    flowEvent.duration=rand(420,760);
+    flowEvent.duration=rand(520,900);
     flowEvent.angle=choice([
       0,
       Math.PI,
@@ -1027,7 +1027,7 @@ window.addEventListener('error',(e)=>{
       Math.PI*1.18,
       Math.PI*1.82
     ]);
-    flowEvent.strength=rand(.034,.055);
+    flowEvent.strength=rand(.052,.078);
     flowEvent.cooldown=rand(1700,2900);
 
     const toast=document.getElementById('captureToast');
@@ -1053,19 +1053,26 @@ window.addEventListener('error',(e)=>{
 
     // Strong flow scatters all lifeforms.
     for(const c of creatures.slice()){
-      c.vx += fx*dt*(1.6+Math.random()*1.2);
-      c.vy += fy*dt*(1.6+Math.random()*1.2);
+      c.vx += fx*dt*(2.2+Math.random()*1.8);
+      c.vy += fy*dt*(2.2+Math.random()*1.8);
 
-      // Strong turbulence: lateral dispersion + local rotational agitation.
-      const turbulence=(Math.random()-.5)*.026*envelope;
-      const swirl=Math.sin((c.x+c.y)*.018 + time*.09)*.018*envelope;
+      // Violent turbulence: strong lateral dispersion + rotational agitation.
+      const turbulence=(Math.random()-.5)*.045*envelope;
+      const swirl=Math.sin((c.x+c.y)*.022 + time*.12)*.032*envelope;
       c.vx += (-Math.sin(flowEvent.angle)*turbulence + Math.cos(c.phaseA)*swirl)*dt;
       c.vy += ( Math.cos(flowEvent.angle)*turbulence + Math.sin(c.phaseB)*swirl)*dt;
 
-      // Random agitation breaks up coherent swimming and scatters colonies.
-      c.vx += (Math.random()-.5)*.020*envelope*dt;
-      c.vy += (Math.random()-.5)*.020*envelope*dt;
-      c.angle += (Math.random()-.5)*.08*envelope*dt;
+      // Random agitation breaks coherent colonies apart.
+      c.vx += (Math.random()-.5)*.040*envelope*dt;
+      c.vy += (Math.random()-.5)*.040*envelope*dt;
+      c.angle += (Math.random()-.5)*.16*envelope*dt;
+
+      // Short violent impulses at peak flow.
+      if(progress>.28 && progress<.78 && Math.random()<.025*dt){
+        const impulse=rand(.45,1.25)*envelope;
+        c.vx += (Math.random()-.5)*impulse;
+        c.vy += (Math.random()-.5)*impulse;
+      }
 
       // Morphological resistance:
       // higher sociability and more balanced structures resist fragmentation better.
@@ -1074,7 +1081,7 @@ window.addEventListener('error',(e)=>{
       const resistance=.28 + social*.42 + curiosity*.12;
 
       // Peak turbulence can shear off extra blocks even from larger organisms.
-      if(progress>.34 && progress<.72 && c.gene.blocks.length>4 && Math.random()<(.0015*(1-resistance*.55))*dt){
+      if(progress>.24 && progress<.80 && c.gene.blocks.length>3 && Math.random()<(.0042*(1-resistance*.42))*dt){
         const extraIdx=(Math.random()*c.gene.blocks.length)|0;
         const extra=c.gene.blocks.splice(extraIdx,1)[0];
         refreshTraits(c.gene);
@@ -1082,15 +1089,33 @@ window.addEventListener('error',(e)=>{
         burst(c.x,c.y,extra?.color||[180,190,205],10);
       }
 
-      // Rare fragmentation pulse during strongest part of the flow.
-      if(progress>.16 && progress<.88 && Math.random()<(.0026*(1-resistance*.72))*dt){
+      // Peak flow can shear off several elements in succession.
+      if(progress>.38 && progress<.68 && c.gene.blocks.length>5 && Math.random()<(.0032*(1-resistance*.35))*dt){
+        const shearCount=Math.min(c.gene.blocks.length-2, 1+((Math.random()*3)|0));
+        for(let si=0;si<shearCount;si++){
+          if(c.gene.blocks.length<=2) break;
+          const ridx=(Math.random()*c.gene.blocks.length)|0;
+          const part=c.gene.blocks.splice(ridx,1)[0];
+          burst(
+            c.x+(Math.random()-.5)*18,
+            c.y+(Math.random()-.5)*18,
+            part?.color||[170,180,195],
+            9
+          );
+        }
+        refreshTraits(c.gene);
+        c.energy=Math.max(2,c.energy-rand(12,24));
+      }
+
+      // Main fragmentation pulse during strongest part of the flow.
+      if(progress>.10 && progress<.92 && Math.random()<(.0058*(1-resistance*.52))*dt){
         if(c.gene.blocks.length>2){
           const idx=(Math.random()*c.gene.blocks.length)|0;
           const removed=c.gene.blocks.splice(idx,1)[0];
           refreshTraits(c.gene);
           c.energy=Math.max(3,c.energy-rand(8,16));
           burst(c.x,c.y,removed?.color||[180,190,205],14);
-        }else if(Math.random()<.42*(1-resistance*.65)){
+        }else if(Math.random()<.68*(1-resistance*.45)){
           const ci=creatures.indexOf(c);
           if(ci>=0){
             burst(c.x,c.y,[150,160,175],20);
@@ -1121,9 +1146,9 @@ window.addEventListener('error',(e)=>{
     const progress=clamp(flowEvent.timer/flowEvent.duration,0,1);
     const envelope=Math.sin(progress*Math.PI);
     ctx.save();
-    ctx.globalAlpha=.16+.22*envelope;
+    ctx.globalAlpha=.20+.28*envelope;
     ctx.strokeStyle='rgba(220,235,255,.88)';
-    ctx.lineWidth=1.8;
+    ctx.lineWidth=2.2;
 
     const dx=Math.cos(flowEvent.angle), dy=Math.sin(flowEvent.angle);
     const px=-dy, py=dx;
@@ -1138,7 +1163,7 @@ window.addEventListener('error',(e)=>{
       ctx.beginPath();
       for(let s=0;s<=9;s++){
         const t=s/9;
-        const wave=Math.sin(t*18 + time*.075 + i)*16*envelope;
+        const wave=Math.sin(t*22 + time*.095 + i)*22*envelope;
         const x=ox+dx*length*t+px*wave;
         const y=oy+dy*length*t+py*wave;
         if(s===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);
