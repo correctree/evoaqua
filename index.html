@@ -46,6 +46,40 @@
     #ui{left:10px;top:10px}
     #legend{right:10px;bottom:10px;max-width:70vw}
   }
+
+  #collectionPanel{
+    position:fixed;right:18px;top:18px;z-index:20;
+    width:min(360px,calc(100vw - 36px));max-height:72vh;
+    padding:14px;border:1px solid var(--line);
+    background:rgba(10,14,22,.82);backdrop-filter:blur(16px);
+    -webkit-backdrop-filter:blur(16px);border-radius:14px;
+    display:none;overflow:auto;
+  }
+  #collectionPanel.open{display:block}
+  #collectionHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+  #collectionHeader h2{font-size:12px;letter-spacing:.15em;margin:0}
+  #collectionGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .specimen{
+    border:1px solid var(--line);border-radius:10px;padding:6px;
+    background:rgba(255,255,255,.035);cursor:pointer;min-height:96px
+  }
+  .specimen canvas{width:100%;aspect-ratio:1/1;border-radius:7px;background:#05070b}
+  .specimen .meta{font-size:9px;color:var(--muted);line-height:1.45;margin-top:5px}
+  #specimenDetail{
+    margin-top:12px;padding-top:12px;border-top:1px solid var(--line);
+    font-size:10px;color:var(--muted);line-height:1.6
+  }
+  #specimenDetail b{color:var(--fg)}
+  #captureToast{
+    position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
+    z-index:30;padding:9px 13px;border-radius:999px;
+    background:rgba(10,14,22,.9);border:1px solid var(--line);
+    font-size:11px;opacity:0;pointer-events:none;transition:opacity .2s
+  }
+  #captureToast.show{opacity:1}
+  @media (max-width:680px){
+    #collectionPanel{right:10px;top:auto;bottom:10px;max-height:60vh}
+  }
 </style>
 </head>
 <body>
@@ -62,11 +96,11 @@
   <div class="row">
     <button id="feedBtn">ADD FOOD</button>
     <button id="burstBtn">MUTATE</button>
-    <button id="resetBtn">RESET</button><button id="soundBtn">START BGM</button>
+    <button id="resetBtn">RESET</button><button id="soundBtn">START BGM</button><button id="collectionBtn">COLLECTION 0</button>
   </div>
   <div class="hint">
     BGM：POPULATION / GENERATION / MUTATION に応じて単純→複雑へ生成<br>
-    クリック／タップ：餌を投入<br>
+    生命をクリック／タップ：捕獲して図鑑へ<br>空いている場所をクリック／タップ：餌を投入<br>
     ドラッグ：水流を発生<br>
     生物は餌を獲得し、形・色・接続を変異させ、分裂または交配します。高世代ほど動き・伸縮・色彩が複雑化します。
   </div>
@@ -77,12 +111,24 @@
   abstract blocks = genes / form / behavior
 </div>
 
+<div id="collectionPanel">
+  <div id="collectionHeader">
+    <h2>SPECIMEN COLLECTION</h2>
+    <button id="closeCollection">CLOSE</button>
+  </div>
+  <div id="collectionGrid"></div>
+  <div id="specimenDetail">捕獲した生命を選択すると詳細が表示されます。</div>
+</div>
+<div id="captureToast">CAPTURED</div>
+
 <script>
 (() => {
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d', { alpha:false });
   let W=innerWidth, H=innerHeight, DPR=Math.min(devicePixelRatio||1,2);
   let creatures=[], foods=[], particles=[];
+  let collection=[];
+  const COLLECTION_KEY='evolvingAquariumCollectionV1';
   let mutationCount=0, maxGeneration=0, time=0;
   let pointer={x:W/2,y:H/2,down:false,px:W/2,py:H/2,vx:0,vy:0};
 
@@ -193,6 +239,138 @@
     for(let i=0;i<n;i++){
       foods.push({x:x+rand(-18,18),y:y+rand(-18,18),r:rand(1.5,3.8),life:1});
     }
+  }
+
+
+  function saveCollection(){
+    try{ localStorage.setItem(COLLECTION_KEY,JSON.stringify(collection)); }catch(e){}
+    updateCollectionUI();
+  }
+
+  function loadCollection(){
+    try{
+      const saved=JSON.parse(localStorage.getItem(COLLECTION_KEY)||'[]');
+      if(Array.isArray(saved)) collection=saved;
+    }catch(e){ collection=[]; }
+    updateCollectionUI();
+  }
+
+  function creatureRadius(c){
+    let r=20;
+    for(const b of c.gene.blocks){
+      r=Math.max(r,Math.hypot(b.x,b.y)+b.s*1.6);
+    }
+    return r*clamp(.78+c.energy/180,.78,1.45);
+  }
+
+  function findCreatureAt(x,y){
+    let best=null,bd=Infinity;
+    for(const c of creatures){
+      const d=Math.hypot(c.x-x,c.y-y);
+      const hit=Math.max(24,creatureRadius(c));
+      if(d<hit && d<bd){best=c;bd=d;}
+    }
+    return best;
+  }
+
+  function captureCreature(c){
+    if(!c) return;
+    const specimen={
+      capturedAt:new Date().toISOString(),
+      generation:c.generation,
+      energy:Math.round(c.energy),
+      age:Math.round(c.age),
+      gene:JSON.parse(JSON.stringify(c.gene)),
+      id:c.id,
+      label:'SPECIMEN-'+String(collection.length+1).padStart(3,'0')
+    };
+    collection.unshift(specimen);
+    saveCollection();
+    const toast=document.getElementById('captureToast');
+    toast.textContent=specimen.label+' CAPTURED';
+    toast.classList.add('show');
+    setTimeout(()=>toast.classList.remove('show'),900);
+    burst(c.x,c.y,[255,255,255],26);
+  }
+
+  function drawSpecimenPreview(canvas,s){
+    const dpr=Math.min(devicePixelRatio||1,2);
+    const size=120;
+    canvas.width=size*dpr; canvas.height=size*dpr;
+    const g=canvas.getContext('2d');
+    g.setTransform(dpr,0,0,dpr,0,0);
+    g.fillStyle='#05070b'; g.fillRect(0,0,size,size);
+    g.save(); g.translate(size/2,size/2);
+    const blocks=s.gene.blocks||[];
+    let extent=28;
+    for(const b of blocks) extent=Math.max(extent,Math.hypot(b.x,b.y)+b.s*1.6);
+    const sc=Math.min(1.5,42/extent);
+    g.scale(sc,sc);
+
+    // connectors
+    g.strokeStyle='rgba(255,255,255,.12)';
+    g.lineWidth=1;
+    for(let i=1;i<blocks.length;i++){
+      g.beginPath(); g.moveTo(blocks[i-1].x,blocks[i-1].y); g.lineTo(blocks[i].x,blocks[i].y); g.stroke();
+    }
+
+    for(const b of blocks){
+      g.save(); g.translate(b.x,b.y); g.rotate(b.r||0);
+      const [r,gg,bb]=b.color||[255,255,255];
+      const alt=palette[(Math.abs(Math.floor((b.x||0)+(b.y||0)+(b.s||0))))%palette.length];
+      let fill;
+      if((s.generation||0)>=8){
+        const gr=g.createLinearGradient(-b.s,-b.s,b.s,b.s);
+        gr.addColorStop(0,`rgba(${r},${gg},${bb},${b.alpha??1})`);
+        gr.addColorStop(1,`rgba(${alt[0]},${alt[1]},${alt[2]},${b.alpha??1})`);
+        fill=gr;
+      } else fill=`rgba(${r},${gg},${bb},${b.alpha??1})`;
+      g.fillStyle=fill; g.strokeStyle=fill; g.lineWidth=1.2;
+      if(b.type==='circle'){g.beginPath();g.arc(0,0,b.s,0,Math.PI*2);g.fill();}
+      else if(b.type==='square'){g.fillRect(-b.s,-b.s,b.s*2,b.s*2);}
+      else if(b.type==='triangle'){g.beginPath();g.moveTo(b.s,0);g.lineTo(-b.s*.75,b.s*.75);g.lineTo(-b.s*.75,-b.s*.75);g.closePath();g.fill();}
+      else if(b.type==='line'){g.lineWidth=Math.max(2,b.s*.35);g.beginPath();g.moveTo(-b.s*1.25,0);g.lineTo(b.s*1.25,0);g.stroke();}
+      else{g.globalAlpha=.6;g.beginPath();g.ellipse(0,0,b.s*1.35,b.s*.72,0,0,Math.PI*2);g.fill();}
+      g.restore();
+    }
+    g.restore();
+  }
+
+  function showSpecimenDetail(s){
+    const types={};
+    for(const b of s.gene.blocks||[]) types[b.type]=(types[b.type]||0)+1;
+    const typeText=Object.entries(types).map(([k,v])=>`${k} × ${v}`).join(' / ');
+    const colors=(s.gene.blocks||[]).map(b=>`rgb(${b.color[0]},${b.color[1]},${b.color[2]})`);
+    const detail=document.getElementById('specimenDetail');
+    detail.innerHTML=`
+      <b>${s.label}</b><br>
+      GENERATION ${s.generation} / BLOCKS ${(s.gene.blocks||[]).length}<br>
+      ${typeText}<br>
+      SPEED ${s.gene.speed.toFixed(2)} / CURIOSITY ${s.gene.curiosity.toFixed(2)} / SOCIABILITY ${s.gene.sociability.toFixed(2)}<br>
+      METABOLISM ${s.gene.metabolism.toFixed(2)}<br>
+      <div style="display:flex;gap:3px;margin-top:6px;flex-wrap:wrap">
+        ${colors.map(c=>`<span style="width:13px;height:13px;border-radius:50%;background:${c};display:inline-block"></span>`).join('')}
+      </div>`;
+  }
+
+  function updateCollectionUI(){
+    const btn=document.getElementById('collectionBtn');
+    if(btn) btn.textContent='COLLECTION '+collection.length;
+    const grid=document.getElementById('collectionGrid');
+    if(!grid) return;
+    grid.innerHTML='';
+    collection.forEach((s,i)=>{
+      const el=document.createElement('div');
+      el.className='specimen';
+      const cv=document.createElement('canvas');
+      const meta=document.createElement('div');
+      meta.className='meta';
+      meta.innerHTML=`${s.label}<br>GEN ${s.generation} / ${s.gene.blocks.length} BLOCKS`;
+      el.appendChild(cv); el.appendChild(meta);
+      el.onclick=()=>showSpecimenDetail(s);
+      grid.appendChild(el);
+      drawSpecimenPreview(cv,s);
+    });
   }
 
   function reset(){
@@ -528,6 +706,12 @@
 
   canvas.addEventListener('pointerdown',e=>{
     const p=point(e);
+    const hit=findCreatureAt(p.x,p.y);
+    if(hit){
+      captureCreature(hit);
+      pointer.down=false;
+      return;
+    }
     pointer.down=true;pointer.x=pointer.px=p.x;pointer.y=pointer.py=p.y;
     addFood(p.x,p.y,8);
     canvas.setPointerCapture?.(e.pointerId);
@@ -739,7 +923,16 @@
   }
 
   document.getElementById('soundBtn').onclick=toggleBGM;
+  document.getElementById('collectionBtn').onclick=()=>{
+    document.getElementById('collectionPanel').classList.toggle('open');
+    updateCollectionUI();
+  };
+  document.getElementById('closeCollection').onclick=()=>{
+    document.getElementById('collectionPanel').classList.remove('open');
+  };
 
+
+  loadCollection();
   reset();
   requestAnimationFrame(loop);
 })();
