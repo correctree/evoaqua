@@ -242,13 +242,7 @@
     <button id="closeCollection">CLOSE</button>
   </div>
   <div id="collectionGrid"></div>
-  <div id="specimenDetail">
-      サムネールをクリックすると拡大表示します。<br><br>
-      <b>形態ルール</b><br>
-      ▲ 推進 / ━ 探索 / ● 感覚 / ■ 安定 / ◇ 接続<br>
-      赤・橙 = SPEED / 黄 = CURIOSITY / 緑 = SOCIABILITY<br>
-      外側へ広がる配置 = CURIOSITY / 非対称 = SPEED / 放射状・均衡 = SOCIABILITY
-    </div>
+  <div id="specimenDetail" style="display:none"></div>
 </div>
 <div id="captureToast">CAPTURED</div>
 
@@ -968,10 +962,10 @@
         ev.stopPropagation();
         collection.splice(i,1);
         saveCollection();
-        document.getElementById('specimenDetail').textContent='サムネールをクリックすると拡大表示します。';
+        document.getElementById('specimenDetail').textContent='';
       };
       el.appendChild(cv); el.appendChild(meta); el.appendChild(del);
-      el.onclick=()=>{ showSpecimenDetail(s); openSpecimenModal(s); };
+      el.onclick=()=>openSpecimenModal(s);
       grid.appendChild(el);
       drawSpecimenPreview(cv,s);
     });
