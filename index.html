@@ -16,7 +16,7 @@
   html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
   canvas{display:block;width:100%;height:100%;touch-action:none}
   #ui{
-    position:fixed;left:18px;top:18px;z-index:10;
+    position:fixed;left:18px;top:56px;z-index:10;
     width:min(320px,calc(100vw - 36px));
     padding:14px 14px 12px;
     border:1px solid var(--line);
@@ -43,7 +43,7 @@
   #legend span{display:inline-flex;align-items:center;margin-right:10px}
   i{width:8px;height:8px;border-radius:50%;background:#fff;display:inline-block;margin-right:5px;opacity:.8}
   @media (max-width:680px){
-    #ui{left:10px;top:10px}
+    #ui{left:10px;top:48px}
     #legend{right:10px;bottom:10px;max-width:70vw}
   }
 
@@ -205,10 +205,22 @@
     #specimenModalBody{grid-template-columns:1fr}
   }
 
+
+  #uiToggle{
+    position:fixed;left:18px;top:18px;z-index:40;
+    appearance:none;border:1px solid rgba(255,255,255,.16);
+    background:rgba(10,14,22,.72);color:#eef3ff;
+    padding:7px 10px;border-radius:10px;font-size:10px;
+    letter-spacing:.08em;cursor:pointer;
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  }
+  #ui.ui-hidden{display:none}
+  body.ui-off #uiToggle{opacity:.55}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<button id="uiToggle" aria-label="UI表示切替">HIDE UI</button>
 
 <div id="ui">
   <h1>EVOLVING AQUARIUM</h1>
@@ -223,17 +235,7 @@
     <button id="burstBtn">MUTATE</button>
     <button id="resetBtn">RESET</button><button id="soundBtn">START BGM</button><button id="collectionBtn">COLLECTION 0</button><button id="lassoModeBtn">LASSO CAPTURE</button>
   </div>
-  <div class="hint">
-    BGM：POPULATION / GENERATION / MUTATION に応じて単純→複雑へ生成<br>
-    生命をクリック／タップ：捕獲して図鑑へ<br>LASSO CAPTURE：自由線で囲んだ生命群を「ひとつのコロニー標本」として捕獲<br>空いている場所をクリック／タップ：餌を投入<br>
-    ドラッグ：水流を発生<br>
-    GEN 0–3：固定形・単色・不透明 / GEN 4–6：有機的な伸縮・グラデーション / GEN 7–8：移行期 / GEN 9以降：半透明オーバーレイから結晶的な秩序構造へ進化。BGMも同じ世代段階に同期します。SPEED / CURIOSITY / SOCIABILITY は図形・色・配置から自動算出されます。天敵は生命を分解・消滅させますが、高いSOCIABILITYを持つ集団は防衛コロニーとなり天敵を退治します。さらに強い水流イベントが周期的に発生し、背景の流線が強調され、生命群は乱流で撹拌・分散されながら構成ブロックを失い、バラバラに分解されることがあります。
-  </div>
-</div>
-
-<div id="legend">
-  <span><i></i>food</span>
-  abstract blocks = genes / form / behavior
+  <div class="hint" style="display:none"></div>
 </div>
 
 <div id="collectionPanel">
@@ -2174,6 +2176,15 @@ window.addEventListener('error',(e)=>{
   }
 
   document.getElementById('soundBtn').onclick=toggleBGM;
+
+  const uiToggle=document.getElementById('uiToggle');
+  uiToggle.onclick=()=>{
+    const panel=document.getElementById('ui');
+    const hidden=panel.classList.toggle('ui-hidden');
+    document.body.classList.toggle('ui-off',hidden);
+    uiToggle.textContent=hidden?'SHOW UI':'HIDE UI';
+  };
+
   document.getElementById('lassoModeBtn').onclick=()=>{
     lassoMode=!lassoMode;
     lassoActive=false;
