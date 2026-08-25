@@ -527,6 +527,10 @@ body.ui-off #collectionModal{display:none !important}
     display:block;
   }
 
+
+  .morphologyRule{margin-top:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.025);color:var(--muted);font-size:9px;line-height:1.45}
+  .morphologyRule b{display:block;margin-bottom:4px;color:var(--fg);font-size:9px;letter-spacing:.1em}
+  .morphologyRule span{display:block}
 </style>
 </head>
 <body>
@@ -550,7 +554,7 @@ body.ui-off #collectionModal{display:none !important}
         <input id="bgmVolume" type="range" min="0" max="150" value="62" step="1" aria-label="BGM volume">
         <output id="bgmVolumeValue" for="bgmVolume">62</output>
       </div>
-  <div class="evolutionRule">
+  <div class="morphologyRule"><b>MORPHOLOGY GENES</b><span>SYM symmetry / REP repetition / BR branching</span><span>TR transparency / EL elasticity / CR crystallization</span></div><div class="evolutionRule">
     <b>EVOLUTION RULE</b>
     <span>成熟：10秒生存 + FOOD ×4 + ENERGY 115</span>
     <span>交配：成熟した2個体が接近 → 約2秒で次世代</span>
@@ -673,6 +677,10 @@ window.addEventListener('error',(e)=>{
       blocks: [],
       hueShift: rand(-18,18),
       metabolism: rand(.8,1.25),
+      morphology:{
+        symmetry:rand(.15,.85), repetition:rand(.10,.80), branching:rand(.10,.80),
+        transparency:rand(.05,.65), elasticity:rand(.05,.75), crystallization:rand(.02,.35)
+      },
       curiosity: 3,
       sociability: 3,
       speed: 3
@@ -696,6 +704,32 @@ window.addEventListener('error',(e)=>{
     };
   }
 
+
+
+  function ensureMorphology(gene){
+    if(!gene.morphology){
+      gene.morphology={symmetry:.35,repetition:.30,branching:.30,transparency:.20,elasticity:.25,crystallization:.10};
+    }
+    const m=gene.morphology;
+    for(const k of ['symmetry','repetition','branching','transparency','elasticity','crystallization']) m[k]=clamp(Number(m[k])||0,0,1);
+    return m;
+  }
+
+  function mutateMorphology(gene,strength=1){
+    const m=ensureMorphology(gene);
+    const delta={symmetry:.12,repetition:.14,branching:.14,transparency:.12,elasticity:.14,crystallization:.10};
+    for(const k in delta) m[k]=clamp(m[k]+rand(-delta[k],delta[k])*strength,0,1);
+    if(Math.random()<.12*strength){
+      const k=choice(Object.keys(delta));
+      m[k]=clamp(m[k]+rand(-.30,.30),0,1);
+    }
+  }
+
+  function inheritMorphology(a,b){
+    const ma=ensureMorphology(a), mb=ensureMorphology(b), out={};
+    for(const k of ['symmetry','repetition','branching','transparency','elasticity','crystallization']) out[k]=clamp((ma[k]+mb[k])/2+rand(-.055,.055),0,1);
+    return out;
+  }
 
   function colorAffinity(rgb){
     // Palette semantics:
@@ -763,6 +797,11 @@ window.addEventListener('error',(e)=>{
     const n=blocks.length;
     radial/=n;
 
+    const morph=ensureMorphology(gene);
+    speed += morph.elasticity*.18 + morph.branching*.06;
+    curiosity += morph.branching*.20 + morph.repetition*.08;
+    sociability += morph.symmetry*.16 + morph.repetition*.12;
+
     // Placement semantics:
     // outward-spreading structures explore more
     const spread=clamp(radial/28,0,1.5);
@@ -795,6 +834,7 @@ window.addEventListener('error',(e)=>{
   }
 
   function refreshTraits(gene){
+    ensureMorphology(gene);
     const t=calculateTraits(gene);
     gene.speed=t.speed;
     gene.curiosity=t.curiosity;
@@ -826,6 +866,7 @@ window.addEventListener('error',(e)=>{
     }
     n.hueShift += rand(-8,8);
     n.metabolism=clamp(n.metabolism+rand(-.08,.08),.55,1.6);
+    mutateMorphology(n,strength);
     refreshTraits(n);
     mutationCount++;
     return n;
@@ -838,6 +879,7 @@ window.addEventListener('error',(e)=>{
     const target=clamp(Math.round((a.blocks.length+b.blocks.length)/2+rand(-1.5,1.5)),2,12);
     for(let i=0;i<target;i++) child.blocks.push(JSON.parse(JSON.stringify(choice(pool))));
     child.metabolism=(a.metabolism+b.metabolism)/2;
+    child.morphology=inheritMorphology(a,b);
     refreshTraits(child);
     return mutateGene(child,.65);
   }
@@ -2152,14 +2194,15 @@ window.addEventListener('error',(e)=>{
     });
   }
 
-  function drawBlock(b, generation=0, phase=0, index=0){
+  function drawBlock(b, generation=0, phase=0, index=0, gene=null){
     ctx.save();
+    const morph=gene ? ensureMorphology(gene) : {symmetry:.35,repetition:.30,branching:.30,transparency:.20,elasticity:.25,crystallization:.10};
 
     // GEN 0–5: rigid / opaque / fixed
     // GEN 6–10: organic deformation / gradient
     // GEN 11+: translucent overlays / increasingly crystalline order
     const organic = clamp((generation-5)/5,0,1);
-    const crystal = clamp((generation-10)/24,0,1);
+    const crystal = clamp(((generation-10)/24)*.70 + morph.crystallization*.55,0,1);
 
     let px=b.x, py=b.y, rot=b.r||0;
     let stretchX=1, stretchY=1;
@@ -2168,8 +2211,8 @@ window.addEventListener('error',(e)=>{
       px += Math.sin(phase*.78 + index*.91)*organic*2.2;
       py += Math.cos(phase*.71 + index*.63)*organic*2.2;
       rot += Math.sin(phase*.62 + index)*organic*.12;
-      stretchX = 1 + Math.sin(phase + index*.7)*(.10 + organic*.16);
-      stretchY = 1 + Math.cos(phase*1.14 + index*.52)*(.07 + organic*.12);
+      stretchX = 1 + Math.sin(phase + index*.7)*(.06 + organic*(.08+morph.elasticity*.22));
+      stretchY = 1 + Math.cos(phase*1.14 + index*.52)*(.05 + organic*(.06+morph.elasticity*.16));
     }
 
     if(generation>=9){
@@ -2206,7 +2249,7 @@ window.addEventListener('error',(e)=>{
       grad.addColorStop(1,`rgba(${alt[0]},${alt[1]},${alt[2]},.9)`);
       ctx.fillStyle=grad;
       ctx.strokeStyle=`rgba(${r},${g},${bl},.95)`;
-      ctx.globalAlpha=.96;
+      ctx.globalAlpha=clamp(.98-morph.transparency*.32,.58,.98);
     }else{
       const grad=ctx.createLinearGradient(-s*1.6,-s*1.2,s*1.6,s*1.2);
       grad.addColorStop(0,`rgba(${r},${g},${bl},${.52+crystal*.12})`);
@@ -2214,7 +2257,7 @@ window.addEventListener('error',(e)=>{
       grad.addColorStop(1,`rgba(${r},${g},${bl},${.26+crystal*.14})`);
       ctx.fillStyle=grad;
       ctx.strokeStyle=`rgba(${Math.min(255,r+40)},${Math.min(255,g+40)},${Math.min(255,bl+40)},${.35+crystal*.4})`;
-      ctx.globalAlpha=.72;
+      ctx.globalAlpha=clamp(.80-morph.transparency*.42,.34,.80);
       ctx.globalCompositeOperation='screen';
     }
 
@@ -2273,7 +2316,7 @@ window.addEventListener('error',(e)=>{
     drawBaseShape(1);
 
     if(generation>=9){
-      const overlays=1+Math.floor(crystal*3);
+      const overlays=1+Math.floor(crystal*2+morph.repetition*3);
       for(let k=1;k<=overlays;k++){
         ctx.save();
         ctx.globalAlpha=.11+crystal*.05;
@@ -2308,6 +2351,7 @@ window.addEventListener('error',(e)=>{
     ctx.translate(c.x,c.y);
 
     const gen=c.generation||0;
+    const morph=ensureMorphology(c.gene);
     const organic=clamp((gen-3)/3,0,1);
     const crystal=clamp((gen-8)/20,0,1);
     const localPhase=c.pulse+c.phaseA*.7;
@@ -2366,7 +2410,36 @@ window.addEventListener('error',(e)=>{
     }
 
     for(let i=0;i<c.gene.blocks.length;i++){
-      drawBlock(c.gene.blocks[i],gen,localPhase+i*.47,i);
+      drawBlock(c.gene.blocks[i],gen,localPhase+i*.47,i,c.gene);
+    }
+
+    if(morph.symmetry>.48 && c.gene.blocks.length){
+      const count=Math.max(1,Math.floor(c.gene.blocks.length*morph.symmetry*.4));
+      ctx.save(); ctx.globalAlpha=.28+morph.symmetry*.20; ctx.scale(1,-1);
+      for(let i=0;i<count;i++) drawBlock(c.gene.blocks[i%c.gene.blocks.length],gen,localPhase+i*.31,i,c.gene);
+      ctx.restore();
+    }
+
+    if(morph.branching>.35){
+      const branches=2+Math.floor(morph.branching*5), len=14+morph.branching*24;
+      ctx.save(); ctx.strokeStyle=`rgba(235,240,255,${.08+morph.branching*.16})`; ctx.lineWidth=.8+morph.branching*.8;
+      for(let i=0;i<branches;i++){
+        const a=Math.PI*2*i/branches + localPhase*.02*morph.elasticity;
+        ctx.beginPath(); ctx.moveTo(0,0);
+        ctx.quadraticCurveTo(Math.cos(a+.35)*len*.55,Math.sin(a+.35)*len*.55,Math.cos(a)*len,Math.sin(a)*len); ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    if(morph.repetition>.42 && c.gene.blocks.length){
+      const repeats=2+Math.floor(morph.repetition*5), radius=18+Math.sqrt(c.gene.blocks.length)*7, motif=c.gene.blocks[0];
+      ctx.save(); ctx.globalAlpha=.10+morph.repetition*.13;
+      for(let i=0;i<repeats;i++){
+        const a=Math.PI*2*i/repeats;
+        ctx.save(); ctx.translate(Math.cos(a)*radius,Math.sin(a)*radius); ctx.rotate(a); ctx.scale(.42,.42);
+        drawBlock(motif,gen,localPhase+i*.2,i,c.gene); ctx.restore();
+      }
+      ctx.restore();
     }
 
     ctx.globalCompositeOperation='screen';
