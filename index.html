@@ -2268,9 +2268,7 @@ window.addEventListener('error',(e)=>{
   };
 
 
-  loadCollection();
-}
-
+  try{ loadCollection(); }catch(e){ console.warn('loadCollection skipped:',e); }
 
   const bgmVolumeSlider=$('bgmVolume');
   const bgmVolumeValue=$('bgmVolumeValue');
@@ -2279,7 +2277,7 @@ window.addEventListener('error',(e)=>{
       const raw=Number(bgmVolumeSlider.value);
       const value=Number.isFinite(raw) ? clamp(raw,0,100) : 62;
       bgmVolume=value/100;
-      if(bgmVolumeValue) bgmVolumeValue.value=String(Math.round(value));
+      if(bgmVolumeValue) bgmVolumeValue.textContent=String(Math.round(value));
       if(typeof master!=='undefined' && master && master.gain){
         master.gain.value=bgmVolume;
       }
@@ -2288,7 +2286,7 @@ window.addEventListener('error',(e)=>{
     applyBgmVolume();
   }
 
-  reset();
+  try{ reset(); }catch(e){ console.error('reset failed:',e); }
   requestAnimationFrame(loop);
 })();
 </script>
