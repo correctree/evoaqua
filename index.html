@@ -401,7 +401,7 @@
     <div>POPULATION<b id="pop">0</b></div>
     <div>GENERATION<b id="gen">0</b></div>
     <div>FOOD<b id="food">0</b></div>
-    <div>MUTATIONS<b id="mut">0</b></div><div>MUSIC PHASE<b id="phase">0</b></div><div>PREDATORS<b id="pred">0</b></div><div>WATER FLOW<b id="flowStat">CALM</b></div>
+    <div>MUTATIONS<b id="mut">0</b></div><div>MUSIC PHASE<b id="phase">0</b></div><div>PREDATORS<b id="pred">0</b></div><div>WATER FLOW<b id="flowStat">CALM</b></div><div>VOLCANO<b id="volcanoStat">QUIET</b></div>
   </div>
   <div class="row">
     <button id="feedBtn">ADD FOOD</button>
@@ -486,6 +486,14 @@ window.addEventListener('error',(e)=>{
   let collection=[];
   const COLLECTION_KEY='evolvingAquariumCollectionV1';
   let mutationCount=0, maxGeneration=0, time=0;
+  let volcanoEvent={
+    active:false,
+    timer:0,
+    duration:0,
+    cooldown:2200,
+    x:0,
+    y:0
+  };
   let flowEvent={
     active:false,
     timer:0,
@@ -1270,6 +1278,10 @@ window.addEventListener('error',(e)=>{
     flowEvent.timer=0;
     flowEvent.duration=0;
     flowEvent.cooldown=rand(1500,2600);
+    volcanoEvent.active=false;
+    volcanoEvent.timer=0;
+    volcanoEvent.duration=0;
+    volcanoEvent.cooldown=rand(2600,4400);
     mutationCount=0; maxGeneration=0;
     for(let i=0;i<30;i++) creatures.push(makeCreature());
     for(let i=0;i<95;i++) addFood(rand(W),rand(H));
@@ -1286,6 +1298,116 @@ window.addEventListener('error',(e)=>{
   }
 
 
+
+
+  function startVolcanoEvent(){
+    if(volcanoEvent.active) return;
+
+    volcanoEvent.active=true;
+    volcanoEvent.timer=0;
+    volcanoEvent.duration=220;
+    volcanoEvent.x=rand(W*.18,W*.82);
+    volcanoEvent.y=H+24;
+    volcanoEvent.cooldown=rand(2600,4400);
+
+    const alive=creatures.slice();
+    const killCount=Math.min(
+      alive.length,
+      Math.max(1,Math.round(alive.length*.10))
+    );
+
+    // Randomly select roughly 10% of current lifeforms.
+    for(let i=alive.length-1;i>0;i--){
+      const j=(Math.random()*(i+1))|0;
+      [alive[i],alive[j]]=[alive[j],alive[i]];
+    }
+
+    const victims=alive.slice(0,killCount);
+    for(const c of victims){
+      const idx=creatures.indexOf(c);
+      if(idx>=0){
+        burst(c.x,c.y,[255,110,55],26);
+        creatures.splice(idx,1);
+      }
+    }
+
+    const toast=$('captureToast');
+    if(toast){
+      toast.textContent='VOLCANIC ERUPTION - '+killCount+' LOST';
+      toast.classList.add('show');
+      setTimeout(()=>toast.classList.remove('show'),1500);
+    }
+  }
+
+  function updateVolcanoEvent(dt){
+    if(!volcanoEvent.active){
+      volcanoEvent.cooldown-=dt;
+      if(volcanoEvent.cooldown<=0){
+        startVolcanoEvent();
+      }
+      return;
+    }
+
+    volcanoEvent.timer+=dt;
+    if(volcanoEvent.timer>=volcanoEvent.duration){
+      volcanoEvent.active=false;
+      volcanoEvent.timer=0;
+    }
+  }
+
+  function drawVolcanoEvent(){
+    if(!volcanoEvent.active) return;
+
+    const p=clamp(volcanoEvent.timer/volcanoEvent.duration,0,1);
+    const envelope=Math.sin(p*Math.PI);
+
+    ctx.save();
+
+    // eruption glow
+    const glow=ctx.createRadialGradient(
+      volcanoEvent.x, H-10, 10,
+      volcanoEvent.x, H-10, 240
+    );
+    glow.addColorStop(0,`rgba(255,120,45,${.46*envelope})`);
+    glow.addColorStop(.35,`rgba(170,55,30,${.22*envelope})`);
+    glow.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=glow;
+    ctx.fillRect(0,0,W,H);
+
+    // volcano cone
+    ctx.globalAlpha=.72*envelope;
+    ctx.fillStyle='rgba(35,28,30,.95)';
+    ctx.beginPath();
+    ctx.moveTo(volcanoEvent.x-70,H);
+    ctx.lineTo(volcanoEvent.x-22,H-92);
+    ctx.lineTo(volcanoEvent.x+22,H-92);
+    ctx.lineTo(volcanoEvent.x+76,H);
+    ctx.closePath();
+    ctx.fill();
+
+    // lava core
+    ctx.globalAlpha=.9*envelope;
+    ctx.fillStyle='rgba(255,95,35,.85)';
+    ctx.beginPath();
+    ctx.ellipse(volcanoEvent.x,H-92,24,8,0,0,Math.PI*2);
+    ctx.fill();
+
+    // eruption particles
+    ctx.globalCompositeOperation='screen';
+    for(let i=0;i<28;i++){
+      const t=(time*.02+i*.137)%1;
+      const spread=(i%7-3)*12;
+      const y=H-96 - t*210;
+      const x=volcanoEvent.x + spread + Math.sin(time*.08+i)*18*(1-t);
+      const r=2+(i%4);
+      ctx.fillStyle=i%3===0?'rgba(255,205,90,.75)':'rgba(255,85,45,.65)';
+      ctx.beginPath();
+      ctx.arc(x,y,r,0,Math.PI*2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
 
   function startWaterFlowEvent(){
     flowEvent.active=true;
@@ -2058,6 +2180,7 @@ window.addEventListener('error',(e)=>{
 
     // Strong-flow overlay is rendered once per frame.
     drawWaterFlow();
+    drawVolcanoEvent();
 
     for(const f of foods){
       ctx.globalAlpha=.65+.25*Math.sin(time*.05+f.x);
@@ -2096,6 +2219,7 @@ window.addEventListener('error',(e)=>{
     if(Math.random()<.012*dt && foods.length<160) addFood(rand(W),rand(H),1);
     creatures.slice().forEach(c=>updateCreature(c,dt));
     updateWaterFlow(dt);
+    updateVolcanoEvent(dt);
 
     // Predators emerge as the ecosystem matures.
     // Higher generation/population increases pressure, but total predators stay limited.
@@ -2142,6 +2266,8 @@ window.addEventListener('error',(e)=>{
     if($('pred')) $('pred').textContent=predators.length;
     const fs=document.getElementById('flowStat');
     if(fs) fs.textContent=flowEvent.active?'STRONG':'CALM';
+    const vs=$('volcanoStat');
+    if(vs) vs.textContent=volcanoEvent.active?'ERUPTION':'QUIET';
   }
 
   let last=performance.now();
