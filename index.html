@@ -1475,8 +1475,8 @@ window.addEventListener('error',(e)=>{
       x,y,
       vx:rand(-.35,.35),vy:rand(-.35,.35),
       angle:rand(Math.PI*2),
-      hp:100,
-      size:rand(22,32),
+      hp:150,
+      size:rand(26,36),
       attackCooldown:0,
       age:0,
       phase:rand(Math.PI*2),
@@ -1506,18 +1506,27 @@ window.addEventListener('error',(e)=>{
     if(!c || !c.gene || !c.gene.blocks) return;
 
     if(c.gene.blocks.length>2){
-      const idx=(Math.random()*c.gene.blocks.length)|0;
-      const removed=c.gene.blocks.splice(idx,1)[0];
+      const removeCount=Math.min(
+        c.gene.blocks.length-2,
+        1 + (Math.random()<.55 ? 1 : 0) + (Math.random()<.22 ? 1 : 0)
+      );
+
+      for(let k=0;k<removeCount;k++){
+        if(c.gene.blocks.length<=2) break;
+        const idx=(Math.random()*c.gene.blocks.length)|0;
+        const removed=c.gene.blocks.splice(idx,1)[0];
+        burst(c.x+(Math.random()-.5)*14,c.y+(Math.random()-.5)*14,removed?.color||[110,90,94],12);
+      }
+
       refreshTraits(c.gene);
-      c.energy=Math.max(4,c.energy-18);
-      p.dismantled++;
-      burst(c.x,c.y,removed?.color||[110,90,94],16);
+      c.energy=Math.max(1,c.energy-(22+removeCount*12));
+      p.dismantled+=removeCount;
     }else{
       const idx=creatures.indexOf(c);
       if(idx>=0){
-        burst(c.x,c.y,[95,78,82],28);
+        burst(c.x,c.y,[95,78,82],32);
         creatures.splice(idx,1);
-        p.dismantled+=2;
+        p.dismantled+=3;
       }
     }
   }
@@ -1535,17 +1544,17 @@ window.addEventListener('error',(e)=>{
 
     if(target){
       const dx=target.x-p.x,dy=target.y-p.y,d=Math.hypot(dx,dy)||1;
-      const hunt=.0105;
+      const hunt=.0165;
       p.vx+=dx/d*hunt*dt;
       p.vy+=dy/d*hunt*dt;
 
       // Colony defense activates around the threatened target.
       const defense=colonyDefenseScore(target);
       if(defense.active && d<145){
-        const repel=clamp(defense.score*.006,0,.025);
+        const repel=clamp(defense.score*.0035,0,.014);
         p.vx-=dx/d*repel*dt;
         p.vy-=dy/d*repel*dt;
-        p.hp-=defense.score*.055*dt;
+        p.hp-=defense.score*.028*dt;
 
         // Defenders turn toward and pressure the predator.
         for(const c of defense.defenders){
@@ -1559,11 +1568,11 @@ window.addEventListener('error',(e)=>{
       if(d<p.size+18 && p.attackCooldown<=0){
         if(!defense.active){
           dismantleCreature(target,p);
-          p.hp=Math.min(120,p.hp+4);
-          p.size=Math.min(42,p.size+.45);
-          p.attackCooldown=70;
+          p.hp=Math.min(190,p.hp+10);
+          p.size=Math.min(50,p.size+.75);
+          p.attackCooldown=42;
         }else{
-          p.hp-=10+defense.score*5;
+          p.hp-=6+defense.score*2.5;
           p.attackCooldown=45;
           burst(p.x,p.y,[88,244,171],18);
         }
@@ -1574,7 +1583,7 @@ window.addEventListener('error',(e)=>{
     p.vx+=Math.cos(p.phase*1.7)*.0018*dt;
     p.vy+=Math.sin(p.phase*1.3)*.0018*dt;
 
-    const maxV=1.55;
+    const maxV=2.05;
     const sp=Math.hypot(p.vx,p.vy);
     if(sp>maxV){p.vx=p.vx/sp*maxV;p.vy=p.vy/sp*maxV;}
     p.vx*=.994;p.vy*=.994;
