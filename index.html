@@ -389,6 +389,59 @@
     }
   }
 
+
+/* Dock specimen collection beneath the left control palette */
+#collectionModal{
+  position:fixed !important;
+  left:18px !important;
+  top:455px !important;
+  right:auto !important;
+  bottom:18px !important;
+  width:342px !important;
+  height:auto !important;
+  padding:0 !important;
+  z-index:18 !important;
+  background:transparent !important;
+  align-items:stretch !important;
+  justify-content:flex-start !important;
+}
+#collectionModal.open{display:block !important}
+#collectionModal .modalCard{
+  width:100% !important;
+  max-width:none !important;
+  height:100% !important;
+  max-height:none !important;
+  margin:0 !important;
+  padding:14px !important;
+  border-radius:14px !important;
+  box-sizing:border-box;
+  overflow:hidden !important;
+  background:rgba(10,14,22,.94) !important;
+}
+#collectionModal .modalHead{margin-bottom:10px !important}
+#collectionModal .modalHead h2{font-size:12px !important}
+#collectionGrid{
+  display:grid !important;
+  grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+  gap:8px !important;
+  max-height:calc(100% - 46px) !important;
+  overflow-y:auto !important;
+  padding-right:3px;
+}
+#collectionGrid .specimenCard{
+  width:auto !important;
+  min-width:0 !important;
+}
+body.ui-off #collectionModal{display:none !important}
+@media(max-width:760px){
+  #collectionModal{
+    left:10px !important;
+    top:445px !important;
+    width:min(330px,calc(100vw - 20px)) !important;
+    bottom:10px !important;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -1313,10 +1366,10 @@ window.addEventListener('error',(e)=>{
     const alive=creatures.slice();
     const killCount=Math.min(
       alive.length,
-      Math.max(1,Math.round(alive.length*.10))
+      Math.max(1,Math.round(alive.length*.30))
     );
 
-    // Randomly select roughly 10% of current lifeforms.
+    // Randomly select roughly 30% of current lifeforms.
     for(let i=alive.length-1;i>0;i--){
       const j=(Math.random()*(i+1))|0;
       [alive[i],alive[j]]=[alive[j],alive[i]];
