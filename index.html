@@ -220,6 +220,33 @@
 .volumeControl{display:flex;align-items:center;gap:7px;margin-top:8px;color:#9aa5b7;font-size:9px;letter-spacing:.06em}
 .volumeControl input{width:112px;cursor:pointer}
 .volumeControl b{min-width:20px;color:#eef3ff;font-size:10px;text-align:right}
+
+  .bgmVolumeControl{
+    display:grid;
+    grid-template-columns:auto minmax(90px,1fr) 28px;
+    align-items:center;
+    gap:8px;
+    width:100%;
+    margin-top:8px;
+    padding-top:8px;
+    border-top:1px solid var(--line);
+    color:var(--muted);
+    font-size:9px;
+    letter-spacing:.07em;
+  }
+  .bgmVolumeControl input[type="range"]{
+    width:100%;
+    min-width:0;
+    cursor:pointer;
+    accent-color:#eef3ff;
+  }
+  .bgmVolumeControl output{
+    color:var(--fg);
+    font-size:10px;
+    text-align:right;
+    font-variant-numeric:tabular-nums;
+  }
+
 </style>
 </head>
 <body>
@@ -237,7 +264,12 @@
   <div class="row">
     <button id="feedBtn">ADD FOOD</button>
     <button id="burstBtn">MUTATE</button>
-    <button id="resetBtn">RESET</button><button id="soundBtn">START BGM</button><button id="collectionBtn">COLLECTION 0</button><button id="lassoModeBtn">LASSO CAPTURE</button>
+    <button id="resetBtn">RESET</button><button id="soundBtn">START BGM</button>
+      <div class="bgmVolumeControl">
+        <label for="bgmVolume">BGM VOLUME</label>
+        <input id="bgmVolume" type="range" min="0" max="100" value="62" step="1" aria-label="BGM volume">
+        <output id="bgmVolumeValue" for="bgmVolume">62</output>
+      </div><button id="collectionBtn">COLLECTION 0</button><button id="lassoModeBtn">LASSO CAPTURE</button>
   </div>
   <div class="hint" style="display:none"></div>
 </div>
@@ -2237,17 +2269,23 @@ window.addEventListener('error',(e)=>{
 
 
   loadCollection();
+}
+
 
   const bgmVolumeSlider=$('bgmVolume');
   const bgmVolumeValue=$('bgmVolumeValue');
   if(bgmVolumeSlider){
-    bgmVolumeSlider.addEventListener('input',()=>{
-      bgmVolume=Number(bgmVolumeSlider.value)/100;
-      if(bgmVolumeValue) bgmVolumeValue.textContent=bgmVolumeSlider.value;
+    const applyBgmVolume=()=>{
+      const raw=Number(bgmVolumeSlider.value);
+      const value=Number.isFinite(raw) ? clamp(raw,0,100) : 62;
+      bgmVolume=value/100;
+      if(bgmVolumeValue) bgmVolumeValue.value=String(Math.round(value));
       if(typeof master!=='undefined' && master && master.gain){
         master.gain.value=bgmVolume;
       }
-    });
+    };
+    bgmVolumeSlider.addEventListener('input',applyBgmVolume);
+    applyBgmVolume();
   }
 
   reset();
