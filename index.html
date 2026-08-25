@@ -174,7 +174,7 @@
   }
   #specimenModalBody{
     display:grid;
-    grid-template-columns:minmax(300px,1.25fr) minmax(300px,.85fr);
+    grid-template-columns:minmax(320px,1.35fr) minmax(320px,.85fr);
     gap:16px;
   }
   #largeSpecimenPreview{
@@ -314,6 +314,81 @@
     }
   }
 
+
+  .specimenRightColumn{
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+  }
+
+  .specimenInfoPanel{
+    aspect-ratio:auto;
+    grid-template-rows:auto auto;
+  }
+
+  .radarWrap{
+    width:100%;
+    aspect-ratio:1 / 1;
+    min-width:0;
+    min-height:0;
+    padding:18px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-sizing:border-box;
+  }
+
+  #radarCanvas{
+    width:100%;
+    height:100%;
+    aspect-ratio:1 / 1;
+    display:block;
+    background:transparent;
+    border:0;
+  }
+
+  .colorPanel{
+    border:1px solid var(--line);
+    border-radius:14px;
+    background:rgba(255,255,255,.018);
+    padding:14px 16px 16px;
+  }
+
+  .colorPanelTitle{
+    margin-bottom:10px;
+    color:var(--fg);
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.12em;
+  }
+
+  .specimenColors{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    align-items:center;
+    min-height:34px;
+  }
+
+  .specimenColorSwatch{
+    width:26px;
+    height:26px;
+    border-radius:50%;
+    border:1px solid rgba(255,255,255,.22);
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.15);
+  }
+
+  @media (max-width:760px){
+    .specimenRightColumn{
+      width:100%;
+    }
+    .radarWrap{
+      max-width:100%;
+      margin:0 auto;
+    }
+  }
+
 </style>
 </head>
 <body>
@@ -359,11 +434,17 @@
     </div>
     <div id="specimenModalBody">
       <canvas id="largeSpecimenPreview"></canvas>
-      <div class="specimenInfoPanel">
-        <div class="radarWrap">
-          <canvas id="radarCanvas"></canvas>
+      <div class="specimenRightColumn">
+        <div class="specimenInfoPanel">
+          <div class="radarWrap">
+            <canvas id="radarCanvas"></canvas>
+          </div>
+          <div id="modalStats"></div>
         </div>
-        <div id="modalStats"></div>
+        <div class="colorPanel">
+          <div class="colorPanelTitle">COLORS</div>
+          <div id="specimenColors" class="specimenColors"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -914,9 +995,10 @@ window.addEventListener('error',(e)=>{
   }
 
   function drawRadarChart(s){
-    const canvas=document.getElementById('radarCanvas');
+    const canvas=$('radarCanvas');
     if(!canvas) return;
-    const size=320;
+
+    const size=360;
     const dpr=Math.min(devicePixelRatio||1,2);
     canvas.width=size*dpr;
     canvas.height=size*dpr;
@@ -934,15 +1016,25 @@ window.addEventListener('error',(e)=>{
     const labels=['SPEED','CURIOSITY','SOCIABILITY'];
     const raw=[traits.speed,traits.curiosity,traits.sociability];
 
-    const cx=size/2, cy=size/2+8, R=105;
-    const angles=[-Math.PI/2, Math.PI/2+Math.PI/3, Math.PI/2-Math.PI/3];
+    // Larger padding so no labels or grid lines are clipped.
+    const cx=size/2;
+    const cy=size/2+12;
+    const R=102;
+    const labelR=142;
+    const angles=[
+      -Math.PI/2,
+      Math.PI/2+Math.PI/3,
+      Math.PI/2-Math.PI/3
+    ];
 
+    // grid
     g.lineWidth=1;
     for(let ring=1;ring<=4;ring++){
       const rr=R*(ring/4);
       g.beginPath();
       angles.forEach((a,i)=>{
-        const x=cx+Math.cos(a)*rr, y=cy+Math.sin(a)*rr;
+        const x=cx+Math.cos(a)*rr;
+        const y=cy+Math.sin(a)*rr;
         if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
       });
       g.closePath();
@@ -950,6 +1042,7 @@ window.addEventListener('error',(e)=>{
       g.stroke();
     }
 
+    // axes
     angles.forEach(a=>{
       g.beginPath();
       g.moveTo(cx,cy);
@@ -958,10 +1051,13 @@ window.addEventListener('error',(e)=>{
       g.stroke();
     });
 
+    // data polygon
     g.beginPath();
     values.forEach((v,i)=>{
-      const a=angles[i], rr=R*v;
-      const x=cx+Math.cos(a)*rr, y=cy+Math.sin(a)*rr;
+      const a=angles[i];
+      const rr=R*v;
+      const x=cx+Math.cos(a)*rr;
+      const y=cy+Math.sin(a)*rr;
       if(i===0) g.moveTo(x,y); else g.lineTo(x,y);
     });
     g.closePath();
@@ -971,36 +1067,87 @@ window.addEventListener('error',(e)=>{
     g.fill();
     g.stroke();
 
+    // points
     values.forEach((v,i)=>{
-      const a=angles[i], rr=R*v;
-      const x=cx+Math.cos(a)*rr, y=cy+Math.sin(a)*rr;
+      const a=angles[i];
+      const rr=R*v;
+      const x=cx+Math.cos(a)*rr;
+      const y=cy+Math.sin(a)*rr;
       g.beginPath();
-      g.arc(x,y,3.5,0,Math.PI*2);
+      g.arc(x,y,4,0,Math.PI*2);
       g.fillStyle='rgba(235,220,255,1)';
       g.fill();
     });
 
+    // labels + values
     g.textAlign='center';
-    g.fillStyle='rgba(235,240,250,.92)';
-    g.font='11px Inter, system-ui, sans-serif';
+    g.textBaseline='middle';
+
     labels.forEach((label,i)=>{
       const a=angles[i];
-      const rr=R+30;
-      const x=cx+Math.cos(a)*rr;
-      const y=cy+Math.sin(a)*rr;
+      const x=cx+Math.cos(a)*labelR;
+      const y=cy+Math.sin(a)*labelR;
+
+      g.fillStyle='rgba(235,240,250,.95)';
+      g.font='12px Inter, system-ui, sans-serif';
       g.fillText(label,x,y);
+
       g.fillStyle='rgba(160,170,190,.95)';
-      g.font='10px Inter, system-ui, sans-serif';
-      g.fillText(raw[i].toFixed(2),x,y+14);
-      g.fillStyle='rgba(235,240,250,.92)';
       g.font='11px Inter, system-ui, sans-serif';
+      g.fillText(raw[i].toFixed(2),x,y+18);
     });
+  }
+
+  function getSpecimenColors(s){
+    const colors=[];
+    const pushColor=(rgb)=>{
+      if(!Array.isArray(rgb) || rgb.length<3) return;
+      const key=rgb.slice(0,3).map(v=>Math.round(v)).join(',');
+      if(!colors.some(c=>c.key===key)){
+        colors.push({key,rgb:rgb.slice(0,3)});
+      }
+    };
+
+    if(s.type==='group' && Array.isArray(s.members)){
+      for(const m of s.members){
+        for(const b of (m.gene?.blocks||[])) pushColor(b.color);
+      }
+    }else{
+      for(const b of (s.gene?.blocks||[])) pushColor(b.color);
+    }
+
+    return colors.slice(0,24);
+  }
+
+  function renderSpecimenColors(s){
+    const box=$('specimenColors');
+    if(!box) return;
+    const colors=getSpecimenColors(s);
+
+    box.innerHTML='';
+    if(!colors.length){
+      const empty=document.createElement('span');
+      empty.textContent='NO COLOR DATA';
+      empty.style.color='var(--muted)';
+      empty.style.fontSize='10px';
+      box.appendChild(empty);
+      return;
+    }
+
+    for(const c of colors){
+      const sw=document.createElement('div');
+      sw.className='specimenColorSwatch';
+      sw.style.background=`rgb(${c.rgb[0]},${c.rgb[1]},${c.rgb[2]})`;
+      sw.title=`RGB ${c.rgb.map(v=>Math.round(v)).join(', ')}`;
+      box.appendChild(sw);
+    }
   }
 
   function openSpecimenModal(s){
     document.getElementById('specimenModalTitle').textContent=s.label || 'SPECIMEN';
     drawLargeSpecimenPreview(s);
     drawRadarChart(s);
+    renderSpecimenColors(s);
 
     const t=getSpecimenTraits(s);
     const stats=document.getElementById('modalStats');
