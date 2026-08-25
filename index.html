@@ -174,7 +174,7 @@
   }
   #specimenModalBody{
     display:grid;
-    grid-template-columns:minmax(280px,1.25fr) minmax(260px,.75fr);
+    grid-template-columns:minmax(300px,1.25fr) minmax(300px,.85fr);
     gap:16px;
   }
   #largeSpecimenPreview{
@@ -247,6 +247,73 @@
     font-variant-numeric:tabular-nums;
   }
 
+
+  /* COLLECTION DETAIL UI — square information panel */
+  #specimenModalBody{
+    align-items:start;
+  }
+
+  .specimenInfoPanel{
+    width:100%;
+    aspect-ratio:1 / 1;
+    min-width:0;
+    display:grid;
+    grid-template-rows:minmax(0, 64%) minmax(0, 36%);
+    border:1px solid var(--line);
+    border-radius:14px;
+    background:rgba(255,255,255,.018);
+    overflow:hidden;
+  }
+
+  .radarWrap{
+    min-width:0;
+    min-height:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:14px 16px 4px;
+  }
+
+  #radarCanvas{
+    width:min(100%, 330px);
+    height:auto;
+    aspect-ratio:1 / 1;
+    background:transparent;
+    border:0;
+    border-radius:0;
+  }
+
+  #modalStats{
+    min-width:0;
+    min-height:0;
+    margin:0;
+    padding:13px 16px 16px;
+    border-top:1px solid var(--line);
+    overflow:auto;
+    background:rgba(0,0,0,.10);
+    font-size:11px;
+    color:var(--muted);
+    line-height:1.65;
+  }
+
+  #modalStats b{
+    color:var(--fg);
+    letter-spacing:.08em;
+  }
+
+  @media (max-width:760px){
+    .specimenInfoPanel{
+      aspect-ratio:auto;
+      grid-template-rows:auto auto;
+    }
+    .radarWrap{
+      aspect-ratio:1 / 1;
+    }
+    #modalStats{
+      overflow:visible;
+    }
+  }
+
 </style>
 </head>
 <body>
@@ -266,8 +333,8 @@
     <button id="burstBtn">MUTATE</button>
     <button id="resetBtn">RESET</button><button id="soundBtn">START BGM</button>
       <div class="bgmVolumeControl">
-        <label for="bgmVolume">BGM VOLUME</label>
-        <input id="bgmVolume" type="range" min="0" max="100" value="62" step="1" aria-label="BGM volume">
+        <label for="bgmVolume">BGM VOLUME (MAX 150)</label>
+        <input id="bgmVolume" type="range" min="0" max="150" value="62" step="1" aria-label="BGM volume">
         <output id="bgmVolumeValue" for="bgmVolume">62</output>
       </div><button id="collectionBtn">COLLECTION 0</button><button id="lassoModeBtn">LASSO CAPTURE</button>
   </div>
@@ -292,8 +359,10 @@
     </div>
     <div id="specimenModalBody">
       <canvas id="largeSpecimenPreview"></canvas>
-      <div>
-        <canvas id="radarCanvas"></canvas>
+      <div class="specimenInfoPanel">
+        <div class="radarWrap">
+          <canvas id="radarCanvas"></canvas>
+        </div>
         <div id="modalStats"></div>
       </div>
     </div>
@@ -939,24 +1008,22 @@ window.addEventListener('error',(e)=>{
     if(s.type==='group' && Array.isArray(s.members)){
       const totalBlocks=s.members.reduce((sum,m)=>sum+(m.gene?.blocks||[]).length,0);
       stats.innerHTML=`
-        <b>COLONY</b><br>
-        LIFEFORMS ${s.members.length}<br>
-        GENERATION ${s.minGeneration ?? 0}–${s.generation ?? 0}<br>
-        TOTAL BLOCKS ${totalBlocks}<br><br>
-        <b>AVERAGE TRAITS</b><br>
-        SPEED ${t.speed.toFixed(2)}<br>
-        CURIOSITY ${t.curiosity.toFixed(2)}<br>
-        SOCIABILITY ${t.sociability.toFixed(2)}
+        <b>COLONY DATA</b><br>
+        LIFEFORMS&nbsp;&nbsp;${s.members.length}<br>
+        GENERATION&nbsp;&nbsp;${s.minGeneration ?? 0}–${s.generation ?? 0}<br>
+        TOTAL BLOCKS&nbsp;&nbsp;${totalBlocks}<br>
+        AVG SPEED&nbsp;&nbsp;${t.speed.toFixed(2)}<br>
+        AVG CURIOSITY&nbsp;&nbsp;${t.curiosity.toFixed(2)}<br>
+        AVG SOCIABILITY&nbsp;&nbsp;${t.sociability.toFixed(2)}
       `;
     }else{
       stats.innerHTML=`
-        <b>INDIVIDUAL</b><br>
-        GENERATION ${s.generation ?? 0}<br>
-        BLOCKS ${(s.gene?.blocks||[]).length}<br><br>
-        <b>TRAITS</b><br>
-        SPEED ${t.speed.toFixed(2)}<br>
-        CURIOSITY ${t.curiosity.toFixed(2)}<br>
-        SOCIABILITY ${t.sociability.toFixed(2)}
+        <b>INDIVIDUAL DATA</b><br>
+        GENERATION&nbsp;&nbsp;${s.generation ?? 0}<br>
+        BLOCKS&nbsp;&nbsp;${(s.gene?.blocks||[]).length}<br>
+        SPEED&nbsp;&nbsp;${t.speed.toFixed(2)}<br>
+        CURIOSITY&nbsp;&nbsp;${t.curiosity.toFixed(2)}<br>
+        SOCIABILITY&nbsp;&nbsp;${t.sociability.toFixed(2)}
       `;
     }
 
@@ -2275,7 +2342,7 @@ window.addEventListener('error',(e)=>{
   if(bgmVolumeSlider){
     const applyBgmVolume=()=>{
       const raw=Number(bgmVolumeSlider.value);
-      const value=Number.isFinite(raw) ? clamp(raw,0,100) : 62;
+      const value=Number.isFinite(raw) ? clamp(raw,0,150) : 62;
       bgmVolume=value/100;
       if(bgmVolumeValue) bgmVolumeValue.textContent=String(Math.round(value));
       if(typeof master!=='undefined' && master && master.gain){
