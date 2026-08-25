@@ -216,6 +216,10 @@
   }
   #ui.ui-hidden{display:none}
   body.ui-off #uiToggle{opacity:.55}
+
+.volumeControl{display:flex;align-items:center;gap:7px;margin-top:8px;color:#9aa5b7;font-size:9px;letter-spacing:.06em}
+.volumeControl input{width:112px;cursor:pointer}
+.volumeControl b{min-width:20px;color:#eef3ff;font-size:10px;text-align:right}
 </style>
 </head>
 <body>
@@ -277,6 +281,7 @@ window.addEventListener('error',(e)=>{
   }
 });
 (() => {
+  let bgmVolume=.62;
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d', { alpha:false });
   let W=innerWidth, H=innerHeight, DPR=Math.min(devicePixelRatio||1,2);
@@ -1949,7 +1954,7 @@ window.addEventListener('error',(e)=>{
     if(audioCtx) return;
     audioCtx = new (window.AudioContext||window.webkitAudioContext)();
     master = audioCtx.createGain();
-    master.gain.value = 0.62;
+    master.gain.value = bgmVolume;
     const comp = audioCtx.createDynamicsCompressor();
     comp.threshold.value=-24; comp.knee.value=18; comp.ratio.value=5; comp.attack.value=.01; comp.release.value=.25;
     master.connect(comp).connect(audioCtx.destination);
@@ -2213,6 +2218,15 @@ window.addEventListener('error',(e)=>{
 
 
   loadCollection();
+
+  const bgmVolumeSlider=document.getElementById('bgmVolume');
+  const bgmVolumeValue=document.getElementById('bgmVolumeValue');
+  bgmVolumeSlider.addEventListener('input',()=>{
+    bgmVolume=Number(bgmVolumeSlider.value)/100;
+    bgmVolumeValue.textContent=bgmVolumeSlider.value;
+    if(typeof master!=='undefined' && master && master.gain) master.gain.value=bgmVolume;
+  });
+
   reset();
   requestAnimationFrame(loop);
 })();
