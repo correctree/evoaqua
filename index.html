@@ -270,17 +270,32 @@
 
 
 <script>
+window.addEventListener('unhandledrejection',(e)=>{
+  console.warn('Unhandled promise rejection:', e.reason);
+});
 window.addEventListener('error',(e)=>{
   const ui=document.getElementById('ui');
-  if(ui && !document.getElementById('runtimeError')){
-    const d=document.createElement('div');
+  if(!ui) return;
+  let d=document.getElementById('runtimeError');
+  if(!d){
+    d=document.createElement('div');
     d.id='runtimeError';
     d.style.cssText='margin-top:8px;padding:7px;border:1px solid rgba(255,100,100,.35);border-radius:8px;color:#ffb0b0;font-size:10px;line-height:1.4';
-    d.textContent='RUNTIME ERROR: '+(e.message||'unknown error');
     ui.appendChild(d);
   }
+  const where = e.filename ? ` @ ${e.filename.split('/').pop()}:${e.lineno||0}` : '';
+  d.textContent='RUNTIME ERROR: '+(e.message||'unknown error')+where;
 });
 (() => {
+  // Safe DOM helpers: UI elements may be added/removed between versions.
+  const $ = (id) => document.getElementById(id);
+  const safeOn = (id, event, handler, options) => {
+    const el = $(id);
+    if(!el) return false;
+    el.addEventListener(event, handler, options);
+    return true;
+  };
+
   let bgmVolume=.62;
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d', { alpha:false });
@@ -913,19 +928,23 @@ window.addEventListener('error',(e)=>{
       `;
     }
 
-    const modal=document.getElementById('specimenModal');
-    modal.classList.add('open');
-    modal.setAttribute('aria-hidden','false');
+    const modal=$('specimenModal');
+    if(modal){
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden','false');
+    }
   }
 
   function closeSpecimenModal(){
-    const modal=document.getElementById('specimenModal');
-    modal.classList.remove('open');
-    modal.setAttribute('aria-hidden','true');
+    const modal=$('specimenModal');
+    if(modal){
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden','true');
+    }
   }
 
   function showSpecimenDetail(s){
-    const detail=document.getElementById('specimenDetail');
+    const detail=$('specimenDetail');
 
     if(s.type==='group' && Array.isArray(s.members)){
       const totalBlocks=s.members.reduce((sum,m)=>sum+(m.gene.blocks||[]).length,0);
@@ -969,9 +988,9 @@ window.addEventListener('error',(e)=>{
   }
 
   function updateCollectionUI(){
-    const btn=document.getElementById('collectionBtn');
+    const btn=$('collectionBtn');
     if(btn) btn.textContent='COLLECTION '+collection.length;
-    const grid=document.getElementById('collectionGrid');
+    const grid=$('collectionGrid');
     if(!grid) return;
     grid.innerHTML='';
     collection.forEach((s,i)=>{
@@ -1860,12 +1879,12 @@ window.addEventListener('error',(e)=>{
     }
     if(particles.length>900) particles.splice(0,particles.length-900);
 
-    document.getElementById('pop').textContent=creatures.length;
-    document.getElementById('gen').textContent=maxGeneration;
-    document.getElementById('food').textContent=foods.length;
-    document.getElementById('mut').textContent=mutationCount;
-    document.getElementById('phase').textContent=generationPhase(maxGeneration);
-    document.getElementById('pred').textContent=predators.length;
+    if($('pop')) $('pop').textContent=creatures.length;
+    if($('gen')) $('gen').textContent=maxGeneration;
+    if($('food')) $('food').textContent=foods.length;
+    if($('mut')) $('mut').textContent=mutationCount;
+    if($('phase')) $('phase').textContent=generationPhase(maxGeneration);
+    if($('pred')) $('pred').textContent=predators.length;
     const fs=document.getElementById('flowStat');
     if(fs) fs.textContent=flowEvent.active?'STRONG':'CALM';
   }
@@ -1930,12 +1949,12 @@ window.addEventListener('error',(e)=>{
     pointer.down=false;
   });
 
-  document.getElementById('feedBtn').onclick=()=>addFood(W*.5,H*.5,45);
-  document.getElementById('burstBtn').onclick=()=>{
+  if($('feedBtn')) $('feedBtn').onclick=()=>addFood(W*.5,H*.5,45);
+  if($('burstBtn')) $('burstBtn').onclick=()=>{
     const picks=creatures.slice().sort(()=>Math.random()-.5).slice(0,Math.max(1,Math.floor(creatures.length*.22)));
     for(const c of picks){ c.gene=mutateGene(c.gene,1.15); burst(c.x,c.y,choice(palette),8); }
   };
-  document.getElementById('resetBtn').onclick=reset;
+  if($('resetBtn')) $('resetBtn').onclick=reset;
 
 
   // ---- Generative BGM: evolution state -> musical complexity ----
@@ -2180,17 +2199,17 @@ window.addEventListener('error',(e)=>{
     else if(bgmTimer){ clearTimeout(bgmTimer); bgmTimer=null; }
   }
 
-  document.getElementById('soundBtn').onclick=toggleBGM;
+  if($('soundBtn')) $('soundBtn').onclick=toggleBGM;
 
-  const uiToggle=document.getElementById('uiToggle');
-  uiToggle.onclick=()=>{
+  const uiToggle=$('uiToggle');
+  if(uiToggle) uiToggle.onclick=()=>{
     const panel=document.getElementById('ui');
     const hidden=panel.classList.toggle('ui-hidden');
     document.body.classList.toggle('ui-off',hidden);
     uiToggle.textContent=hidden?'SHOW UI':'HIDE UI';
   };
 
-  document.getElementById('lassoModeBtn').onclick=()=>{
+  if($('lassoModeBtn')) $('lassoModeBtn').onclick=()=>{
     lassoMode=!lassoMode;
     lassoActive=false;
     lassoPoints=[];
@@ -2199,33 +2218,37 @@ window.addEventListener('error',(e)=>{
     b.textContent=lassoMode?'LASSO ON':'LASSO CAPTURE';
   };
 
-  document.getElementById('collectionBtn').onclick=()=>{
+  if($('collectionBtn')) $('collectionBtn').onclick=()=>{
     document.getElementById('collectionPanel').classList.toggle('open');
     updateCollectionUI();
   };
 
-  document.getElementById('closeSpecimenModal').onclick=closeSpecimenModal;
-  document.getElementById('specimenModal').addEventListener('pointerdown',(e)=>{
+  if($('closeSpecimenModal')) $('closeSpecimenModal').onclick=closeSpecimenModal;
+  if($('specimenModal')) $('specimenModal').addEventListener('pointerdown',(e)=>{
     if(e.target.id==='specimenModal') closeSpecimenModal();
   });
   document.addEventListener('keydown',(e)=>{
     if(e.key==='Escape') closeSpecimenModal();
   });
 
-  document.getElementById('closeCollection').onclick=()=>{
+  if($('closeCollection')) $('closeCollection').onclick=()=>{
     document.getElementById('collectionPanel').classList.remove('open');
   };
 
 
   loadCollection();
 
-  const bgmVolumeSlider=document.getElementById('bgmVolume');
-  const bgmVolumeValue=document.getElementById('bgmVolumeValue');
-  bgmVolumeSlider.addEventListener('input',()=>{
-    bgmVolume=Number(bgmVolumeSlider.value)/100;
-    bgmVolumeValue.textContent=bgmVolumeSlider.value;
-    if(typeof master!=='undefined' && master && master.gain) master.gain.value=bgmVolume;
-  });
+  const bgmVolumeSlider=$('bgmVolume');
+  const bgmVolumeValue=$('bgmVolumeValue');
+  if(bgmVolumeSlider){
+    bgmVolumeSlider.addEventListener('input',()=>{
+      bgmVolume=Number(bgmVolumeSlider.value)/100;
+      if(bgmVolumeValue) bgmVolumeValue.textContent=bgmVolumeSlider.value;
+      if(typeof master!=='undefined' && master && master.gain){
+        master.gain.value=bgmVolume;
+      }
+    });
+  }
 
   reset();
   requestAnimationFrame(loop);
