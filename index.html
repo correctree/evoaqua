@@ -505,6 +505,28 @@ body.ui-off #collectionModal{display:none !important}
     }
   }
 
+
+  .evolutionRule{
+    margin-top:10px;
+    padding:9px 10px;
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:rgba(255,255,255,.025);
+    color:var(--muted);
+    font-size:9px;
+    line-height:1.45;
+  }
+  .evolutionRule b{
+    display:block;
+    margin-bottom:4px;
+    color:var(--fg);
+    font-size:9px;
+    letter-spacing:.1em;
+  }
+  .evolutionRule span{
+    display:block;
+  }
+
 </style>
 </head>
 <body>
@@ -527,7 +549,14 @@ body.ui-off #collectionModal{display:none !important}
         <label for="bgmVolume">BGM VOLUME (MAX 150)</label>
         <input id="bgmVolume" type="range" min="0" max="150" value="62" step="1" aria-label="BGM volume">
         <output id="bgmVolumeValue" for="bgmVolume">62</output>
-      </div><button id="collectionBtn">COLLECTION 0</button><button id="lassoModeBtn">LASSO CAPTURE</button>
+      </div>
+  <div class="evolutionRule">
+    <b>EVOLUTION RULE</b>
+    <span>成熟：10秒生存 + FOOD ×4 + ENERGY 115</span>
+    <span>交配：成熟した2個体が接近 → 約2秒で次世代</span>
+    <span>単独分裂：FOOD ×6 + ENERGY 130 → 約3秒</span>
+  </div>
+<button id="collectionBtn">COLLECTION 0</button><button id="lassoModeBtn">LASSO CAPTURE</button>
   </div>
   <div class="hint" style="display:none"></div>
 <div id="collectionPanel">
@@ -819,6 +848,8 @@ window.addEventListener('error',(e)=>{
       angle:rand(Math.PI*2), spin:rand(-.006,.006),
       energy:rand(55,95), age:0, generation,
       gene:refreshTraits(gene||makeGene()),
+      foodEaten:0,
+      evolutionTimer:0,
       cooldown:rand(0,300), pulse:rand(Math.PI*2),
       phaseA:rand(Math.PI*2), phaseB:rand(Math.PI*2),
       turnBias:rand(-1,1), wobbleSeed:rand(1000),
@@ -911,6 +942,7 @@ window.addEventListener('error',(e)=>{
       generation:c.generation,
       energy:Math.round(c.energy),
       age:Math.round(c.age),
+      foodEaten:c.foodEaten||0,
       gene:JSON.parse(JSON.stringify(c.gene)),
       id:c.id,
       label:'SPECIMEN-'+String(collection.length+1).padStart(3,'0')
@@ -1906,6 +1938,7 @@ window.addEventListener('error',(e)=>{
         const idx=foods.indexOf(f);
         if(idx>=0) foods.splice(idx,1);
         c.energy=Math.min(150,c.energy+rand(12,20));
+        c.foodEaten=(c.foodEaten||0)+1;
         burst(f.x,f.y,choice(palette));
         if(Math.random()<.12) c.gene=mutateGene(c.gene,.45);
       }
@@ -1994,31 +2027,122 @@ window.addEventListener('error',(e)=>{
     if(c.x<-pad)c.x=W+pad; if(c.x>W+pad)c.x=-pad;
     if(c.y<-pad)c.y=H+pad; if(c.y>H+pad)c.y=-pad;
 
-    // reproduction
-    if(c.energy>112 && c.cooldown<=0 && creatures.length<70){
-      // Early generations reproduce/merge less frequently.
-      // GEN 0-5: 35% of the normal reproduction rate.
-      const reproductionRate = c.generation<=5 ? .0012*0.35 : .0012;
-      if(Math.random()<reproductionRate*dt){
-        const candidates=creatures.filter(o=>o!==c && o.energy>80 && Math.hypot(o.x-c.x,o.y-c.y)<90 && o.cooldown<=0);
-        const crossoverChance = c.generation<=5 ? .28 : .58;
-        if(candidates.length && Math.random()<crossoverChance){
-          const o=choice(candidates);
-          const g=crossGenes(c.gene,o.gene);
-          const gen=Math.max(c.generation,o.generation)+1;
-          creatures.push(makeCreature((c.x+o.x)/2,(c.y+o.y)/2,g,gen));
-          c.energy-=28; o.energy-=22; c.cooldown=o.cooldown=420;
-          maxGeneration=Math.max(maxGeneration,gen);
-          burst((c.x+o.x)/2,(c.y+o.y)/2,[255,255,255],22);
+    // =========================================================
+    // EXPLICIT EVOLUTION / GENERATION RULES
+    //
+    // A new generation is created only when a child is born.
+    //
+    // COMMON MATURITY REQUIREMENTS
+    // 1. survive for at least ~10 seconds (age >= 600)
+    // 2. eat at least 4 food particles
+    // 3. energy >= 115
+    // 4. reproduction cooldown finished
+    //
+    // CROSSBREEDING
+    // - two mature lifeforms must be within 90 px
+    // - both must satisfy the common requirements
+    // - remain reproduction-ready for ~2 seconds
+    // - child generation = max(parent generations) + 1
+    //
+    // SOLO DIVISION
+    // - used when no mature partner is nearby
+    // - stricter requirement: 6 foods + energy >= 130
+    // - remain ready for ~3 seconds
+    // - child generation = parent generation + 1
+    // =========================================================
+
+    const isMature = (o) =>
+      o &&
+      o.age >= 600 &&
+      (o.foodEaten||0) >= 4 &&
+      o.energy >= 115 &&
+      o.cooldown <= 0;
+
+    const commonReady = isMature(c) && creatures.length < 70;
+
+    if(commonReady){
+      const candidates=creatures.filter(o=>
+        o!==c &&
+        isMature(o) &&
+        Math.hypot(o.x-c.x,o.y-c.y)<90
+      );
+
+      if(candidates.length){
+        // CROSSBREEDING: maintain readiness for ~2 seconds.
+        c.evolutionTimer=(c.evolutionTimer||0)+dt;
+
+        if(c.evolutionTimer>=120){
+          const o=candidates.reduce((best,o)=>{
+            if(!best) return o;
+            return Math.hypot(o.x-c.x,o.y-c.y) < Math.hypot(best.x-c.x,best.y-c.y) ? o : best;
+          },null);
+
+          if(o){
+            const g=crossGenes(c.gene,o.gene);
+            const gen=Math.max(c.generation,o.generation)+1;
+
+            creatures.push(
+              makeCreature(
+                (c.x+o.x)/2,
+                (c.y+o.y)/2,
+                g,
+                gen
+              )
+            );
+
+            c.energy-=32;
+            o.energy-=28;
+            c.foodEaten=Math.max(0,(c.foodEaten||0)-4);
+            o.foodEaten=Math.max(0,(o.foodEaten||0)-4);
+            c.cooldown=520;
+            o.cooldown=520;
+            c.evolutionTimer=0;
+            o.evolutionTimer=0;
+
+            maxGeneration=Math.max(maxGeneration,gen);
+            burst((c.x+o.x)/2,(c.y+o.y)/2,[255,255,255],24);
+          }
+        }
+      }else{
+        // SOLO DIVISION: stricter than crossbreeding.
+        const soloReady =
+          c.age >= 600 &&
+          (c.foodEaten||0) >= 6 &&
+          c.energy >= 130 &&
+          c.cooldown <= 0;
+
+        if(soloReady){
+          c.evolutionTimer=(c.evolutionTimer||0)+dt;
+
+          if(c.evolutionTimer>=180){
+            const g=mutateGene(c.gene,.9);
+            const gen=c.generation+1;
+
+            creatures.push(
+              makeCreature(
+                c.x+rand(-14,14),
+                c.y+rand(-14,14),
+                g,
+                gen
+              )
+            );
+
+            c.energy-=42;
+            c.foodEaten=Math.max(0,(c.foodEaten||0)-6);
+            c.cooldown=600;
+            c.evolutionTimer=0;
+
+            maxGeneration=Math.max(maxGeneration,gen);
+            burst(c.x,c.y,[255,255,255],20);
+          }
         }else{
-          const g=mutateGene(c.gene,.9);
-          const gen=c.generation+1;
-          creatures.push(makeCreature(c.x+rand(-14,14),c.y+rand(-14,14),g,gen));
-          c.energy-=34; c.cooldown=480; maxGeneration=Math.max(maxGeneration,gen);
-          burst(c.x,c.y,[255,255,255],18);
+          c.evolutionTimer=0;
         }
       }
+    }else{
+      c.evolutionTimer=0;
     }
+
   }
 
   function burst(x,y,color,n=10){
